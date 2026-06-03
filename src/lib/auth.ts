@@ -8,6 +8,7 @@ const SECRET = new TextEncoder().encode(
 );
 
 const COOKIE_NAME = "stock_analyst_token";
+const COOKIE_PATH = "/";
 
 export interface JWTPayload {
   userId: number;
@@ -41,6 +42,22 @@ export async function getSession(): Promise<JWTPayload | null> {
   }
 
   return null;
+}
+
+export function shouldUseSecureCookie(requestUrl?: string): boolean {
+  const explicit = process.env.COOKIE_SECURE;
+  if (explicit === "true") return true;
+  if (explicit === "false") return false;
+
+  if (!requestUrl) {
+    return process.env.NODE_ENV === "production";
+  }
+
+  try {
+    return new URL(requestUrl).protocol === "https:";
+  } catch {
+    return process.env.NODE_ENV === "production";
+  }
 }
 
 export function hashPassword(password: string): string {
@@ -77,3 +94,4 @@ export function updatePassword(userId: number, newPassword: string): void {
 }
 
 export { COOKIE_NAME };
+export { COOKIE_PATH };

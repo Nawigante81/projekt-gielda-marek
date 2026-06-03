@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getSettingsRows, upsertSetting } from "@/lib/postgres-access";
 
 // Keys that should never be returned in full (mask them)
 const SENSITIVE_KEYS = [
   "finnhub_api_key",
+  "twelvedata_api_key",
   "alphavantage_api_key",
   "openai_api_key",
   "telegram_bot_token",
@@ -15,12 +17,12 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = getDb();
-  const settings = db.prepare("SELECT key, value FROM app_settings").all() as Array<{ key: string; value: string }>;
+  const settings = await getSettingsRows();
 
   // Also include env-based keys (just indicate if they're set)
   const envKeys = {
     finnhub_api_key: !!process.env.FINNHUB_API_KEY,
+    twelvedata_api_key: !!process.env.TWELVEDATA_API_KEY,
     alphavantage_api_key: !!process.env.ALPHA_VANTAGE_API_KEY,
     openai_api_key: !!process.env.OPENAI_API_KEY,
     openai_base_url: process.env.OPENAI_BASE_URL || "",
@@ -45,10 +47,9 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const db = getDb();
 
   const allowedKeys = [
-    "finnhub_api_key", "alphavantage_api_key", "openai_api_key",
+    "finnhub_api_key", "twelvedata_api_key", "alphavantage_api_key", "openai_api_key",
     "openai_base_url", "telegram_bot_token", "telegram_chat_id",
     "smtp_host", "smtp_port", "smtp_user", "smtp_password",
     "rsi_overbought", "rsi_oversold", "volume_spike_threshold",
@@ -59,15 +60,11 @@ export async function POST(req: NextRequest) {
     "premarket_check",
   ];
 
-  const updateStmt = db.prepare(
-    "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
-  );
-
   for (const [key, value] of Object.entries(body)) {
     if (allowedKeys.includes(key) && typeof value === "string") {
       // Don't update masked values
       if (value !== "••••••••") {
-        updateStmt.run(key, value);
+        await upsertSetting(key, value);
       }
     }
   }

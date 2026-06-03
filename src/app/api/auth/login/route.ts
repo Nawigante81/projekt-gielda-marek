@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Brak danych logowania" }, { status: 400 });
     }
 
-    const user = getUserByUsername(username);
+    const user = await getUserByUsername(username);
     if (!user) {
       return NextResponse.json({ error: "Nieprawidłowe dane logowania" }, { status: 401 });
     }

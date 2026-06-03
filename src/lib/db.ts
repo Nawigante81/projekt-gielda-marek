@@ -1,6 +1,12 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import {
+  DEFAULT_ALERT_RULES,
+  DEFAULT_MARKET_INDICES,
+  DEFAULT_SETTINGS,
+  DEFAULT_WATCHLISTS,
+} from "./database-schema";
 
 function resolveDbPath(): string {
   if (process.env.SQLITE_DB_PATH) {
@@ -502,62 +508,17 @@ function initSchema(db: Database.Database) {
     ).run(defaultHash, adminUser.id);
   }
 
-  // Insert default settings
-  const defaultSettings = [
-    ["analysis_hour_1", "10:30"],
-    ["analysis_hour_2", "12:30"],
-    ["analysis_hour_3", "16:05"],
-    ["analysis_hour_4", "16:30"],
-    ["premarket_check", "08:00"],
-    ["rsi_overbought", "70"],
-    ["rsi_oversold", "30"],
-    ["volume_spike_threshold", "150"],
-    ["price_move_threshold", "5"],
-    ["data_source_primary", "finnhub"],
-    ["data_source_secondary", "alphavantage"],
-    ["data_source_fallback", "yfinance"],
-    ["timezone", "America/New_York"],
-    ["report_language", "pl"],
-    ["mode", "test"],
-    ["market_cache_ttl_seconds", "900"],
-    ["event_cache_ttl_seconds", "21600"],
-    ["news_cache_ttl_seconds", "3600"],
-    ["retry_attempts", "3"],
-    ["market_timezone", "America/New_York"],
-    ["sentiment_weight", "10"],
-    ["auto_watchlist_analysis", "1"],
-    ["notifications_telegram", "0"],
-    ["notifications_email", "0"],
-    ["notifications_webhook", "0"],
-    ["webhook_url", ""],
-  ];
-
   const insertSetting = db.prepare(
     "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)"
   );
-  for (const [key, value] of defaultSettings) {
+  for (const [key, value] of DEFAULT_SETTINGS) {
     insertSetting.run(key, value);
   }
-
-  // Insert default market indices
-  const defaultIndices = [
-    ["SPY", "S&P 500"],
-    ["QQQ", "Nasdaq 100"],
-    ["DIA", "Dow Jones"],
-    ["IWM", "Russell 2000"],
-    ["^VIX", "VIX"],
-    ["DX-Y.NYB", "DXY"],
-    ["^TNX", "US 10Y Yield"],
-    ["GC=F", "Gold"],
-    ["CL=F", "Oil (WTI)"],
-    ["BTC-USD", "Bitcoin"],
-    ["ETH-USD", "Ethereum"],
-  ];
 
   const insertIndex = db.prepare(
     "INSERT OR IGNORE INTO market_indices (symbol, name) VALUES (?, ?)"
   );
-  for (const [symbol, name] of defaultIndices) {
+  for (const [symbol, name] of DEFAULT_MARKET_INDICES) {
     insertIndex.run(symbol, name);
   }
 
@@ -578,6 +539,20 @@ function initSchema(db: Database.Database) {
     db.prepare(
       "INSERT INTO analysis_schedule (name, cron_expression, timezone) VALUES (?, ?, ?)"
     ).run("Premarket Check (8:00 AM ET)", "0 8 * * 1-5", "America/New_York");
+  }
+
+  const insertWatchlist = db.prepare(
+    "INSERT OR IGNORE INTO watchlists (name, slug, description, color, is_default) VALUES (?, ?, ?, ?, ?)"
+  );
+  for (const [name, slug, description, color, isDefault] of DEFAULT_WATCHLISTS) {
+    insertWatchlist.run(name, slug, description, color, isDefault);
+  }
+
+  const insertAlertRule = db.prepare(
+    "INSERT OR IGNORE INTO alert_rules (rule_key, name, description, threshold_value) VALUES (?, ?, ?, ?)"
+  );
+  for (const [ruleKey, name, description, thresholdValue] of DEFAULT_ALERT_RULES) {
+    insertAlertRule.run(ruleKey, name, description, thresholdValue);
   }
 }
 

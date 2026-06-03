@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 
 interface SettingsData {
   finnhub_api_key: string | boolean;
+  twelvedata_api_key: string | boolean;
   alphavantage_api_key: string | boolean;
   openai_api_key: string | boolean;
   openai_base_url: string;
@@ -20,6 +21,8 @@ interface SettingsData {
   volume_spike_threshold: string;
   price_move_threshold: string;
   data_source_primary: string;
+  data_source_secondary: string;
+  data_source_fallback: string;
   notifications_telegram: string;
   notifications_email: string;
   notifications_webhook: string;
@@ -102,6 +105,12 @@ export default function Settings() {
   }
 
   const envOverrides = settings._env_overrides as Record<string, boolean | string> || {};
+  const marketDataSourceOptions = [
+    { value: "finnhub", label: "Finnhub (darmowy)" },
+    { value: "twelvedata", label: "Twelve Data (darmowy/płatny)" },
+    { value: "alphavantage", label: "Alpha Vantage (darmowy)" },
+    { value: "yahoo", label: "Yahoo Finance (darmowy, bez klucza)" },
+  ];
 
   const InputField = ({ label, settingKey, placeholder, type = "text", isPassword = false }: {
     label: string; settingKey: string; placeholder?: string; type?: string; isPassword?: boolean;
@@ -159,6 +168,7 @@ export default function Settings() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <InputField label="Finnhub API Key" settingKey="finnhub_api_key" placeholder="Darmowy klucz z finnhub.io" isPassword />
+          <InputField label="Twelve Data API Key" settingKey="twelvedata_api_key" placeholder="Klucz z twelvedata.com" isPassword />
           <InputField label="Alpha Vantage API Key" settingKey="alphavantage_api_key" placeholder="Darmowy klucz z alphavantage.co" isPassword />
           <InputField label="OpenAI API Key" settingKey="openai_api_key" placeholder="sk-..." isPassword />
           <InputField label="OpenAI Base URL" settingKey="openai_base_url" placeholder="https://api.openai.com/v1" />
@@ -256,13 +266,37 @@ export default function Settings() {
             value={String(settings.data_source_primary || "finnhub")}
             onChange={e => set("data_source_primary", e.target.value)}
           >
-            <option value="finnhub">Finnhub (darmowy)</option>
-            <option value="alphavantage">Alpha Vantage (darmowy)</option>
-            <option value="yahoo">Yahoo Finance (darmowy, bez klucza)</option>
+            {marketDataSourceOptions.map((option) => (
+              <option key={`primary-${option.value}`} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Drugie źródło danych</label>
+          <select
+            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+            value={String(settings.data_source_secondary || "alphavantage")}
+            onChange={e => set("data_source_secondary", e.target.value)}
+          >
+            {marketDataSourceOptions.map((option) => (
+              <option key={`secondary-${option.value}`} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Fallback końcowy</label>
+          <select
+            className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+            value={String(settings.data_source_fallback || "yahoo")}
+            onChange={e => set("data_source_fallback", e.target.value)}
+          >
+            {marketDataSourceOptions.map((option) => (
+              <option key={`fallback-${option.value}`} value={option.value}>{option.label}</option>
+            ))}
           </select>
         </div>
         <div className="text-xs text-slate-600">
-          Fallback: Finnhub → Alpha Vantage → Yahoo Finance
+          Kolejność odpytywania: {String(settings.data_source_primary || "finnhub")} → {String(settings.data_source_secondary || "alphavantage")} → {String(settings.data_source_fallback || "yahoo")}
         </div>
         <div>
           <label className="block text-xs text-slate-400 mb-1">Tryb aplikacji</label>

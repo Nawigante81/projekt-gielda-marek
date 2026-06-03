@@ -13,11 +13,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Hasło musi mieć minimum 6 znaków" }, { status: 400 });
   }
 
-  const user = getUserByUsername(session.username);
+  const user = await getUserByUsername(session.username);
   if (!user || !verifyPassword(currentPassword, user.password_hash)) {
     return NextResponse.json({ error: "Nieprawidłowe aktualne hasło" }, { status: 401 });
   }
 
-  updatePassword(session.userId, newPassword);
+  await updatePassword(session.userId, newPassword);
   return NextResponse.json({ success: true });
 }

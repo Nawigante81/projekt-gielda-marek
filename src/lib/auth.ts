@@ -1,7 +1,11 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
-import { getDb } from "./db";
 import { cookies } from "next/headers";
+import {
+  createUser as createUserRecord,
+  getUserByUsername as getUserByUsernameRecord,
+  updateUserPassword as updateUserPasswordRecord,
+} from "./postgres-access";
 
 const SECRET = new TextEncoder().encode(
   process.env.APP_SECRET_KEY || "super-secret-key-change-in-production-min-32-chars"
@@ -68,29 +72,18 @@ export function verifyPassword(password: string, hash: string): boolean {
   return bcrypt.compareSync(password, hash);
 }
 
-export function getUserByUsername(username: string) {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM users WHERE username = ?")
-    .get(username) as
-    | { id: number; username: string; password_hash: string }
-    | undefined;
+export async function getUserByUsername(username: string) {
+  return getUserByUsernameRecord(username);
 }
 
-export function createUser(username: string, password: string): void {
-  const db = getDb();
+export async function createUserWithPassword(username: string, password: string): Promise<void> {
   const hash = hashPassword(password);
-  db.prepare(
-    "INSERT INTO users (username, password_hash) VALUES (?, ?)"
-  ).run(username, hash);
+  await createUserRecord(username, hash);
 }
 
-export function updatePassword(userId: number, newPassword: string): void {
-  const db = getDb();
+export async function updatePassword(userId: number, newPassword: string): Promise<void> {
   const hash = hashPassword(newPassword);
-  db.prepare(
-    "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(hash, userId);
+  await updateUserPasswordRecord(userId, hash);
 }
 
 export { COOKIE_NAME };

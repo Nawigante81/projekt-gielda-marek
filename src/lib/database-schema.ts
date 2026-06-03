@@ -1,0 +1,64 @@
+export const DEFAULT_SETTINGS: Array<[string, string]> = [
+  ["analysis_hour_1", "10:30"],
+  ["analysis_hour_2", "12:30"],
+  ["analysis_hour_3", "16:05"],
+  ["analysis_hour_4", "16:30"],
+  ["premarket_check", "08:00"],
+  ["rsi_overbought", "70"],
+  ["rsi_oversold", "30"],
+  ["volume_spike_threshold", "150"],
+  ["price_move_threshold", "5"],
+  ["data_source_primary", "finnhub"],
+  ["data_source_secondary", "alphavantage"],
+  ["data_source_fallback", "yfinance"],
+  ["timezone", "America/New_York"],
+  ["report_language", "pl"],
+  ["mode", "test"],
+  ["market_cache_ttl_seconds", "900"],
+  ["event_cache_ttl_seconds", "21600"],
+  ["news_cache_ttl_seconds", "3600"],
+  ["retry_attempts", "3"],
+  ["market_timezone", "America/New_York"],
+  ["sentiment_weight", "10"],
+  ["auto_watchlist_analysis", "1"],
+  ["notifications_telegram", "0"],
+  ["notifications_email", "0"],
+  ["notifications_webhook", "0"],
+  ["webhook_url", ""],
+];
+
+export const DEFAULT_MARKET_INDICES: Array<[string, string]> = [
+  ["SPY", "S&P 500"],
+  ["QQQ", "Nasdaq 100"],
+  ["DIA", "Dow Jones"],
+  ["IWM", "Russell 2000"],
+  ["^VIX", "VIX"],
+  ["DX-Y.NYB", "DXY"],
+  ["^TNX", "US 10Y Yield"],
+  ["GC=F", "Gold"],
+  ["CL=F", "Oil (WTI)"],
+  ["BTC-USD", "Bitcoin"],
+  ["ETH-USD", "Ethereum"],
+];
+
+export const DEFAULT_WATCHLISTS: Array<[string, string, string, string, number]> = [
+  ["AI", "ai", "Spółki związane ze sztuczną inteligencją", "#0ea5e9", 1],
+  ["TECH", "tech", "Szeroki sektor technologiczny", "#8b5cf6", 0],
+  ["DIVIDEND", "dividend", "Spółki dywidendowe", "#22c55e", 0],
+  ["ETF", "etf", "Fundusze i ETF-y", "#f59e0b", 0],
+];
+
+export const DEFAULT_ALERT_RULES: Array<[string, string, string, number | null]> = [
+  ["rsi_below_30", "RSI < 30", "Alert przy wejściu w strefę wyprzedania", 30],
+  ["rsi_above_70", "RSI > 70", "Alert przy wejściu w strefę wykupienia", 70],
+  ["golden_cross", "Golden Cross", "SMA50 przecina SMA200 od dołu", null],
+  ["death_cross", "Death Cross", "SMA50 przecina SMA200 od góry", null],
+  ["ema_cross", "Przecięcie EMA", "EMA12 przecina EMA26", null],
+  ["break_sma200", "Przebicie SMA200", "Cena przebija SMA200", null],
+  ["volume_300", "Wolumen > 300% średniej", "Nagły skok wolumenu", 300],
+  ["new_ath", "Nowe ATH", "Nowe roczne maksimum", null],
+  ["new_atl", "Nowe ATL", "Nowe roczne minimum", null],
+  ["gap_up", "Gap Up", "Otwarcie powyżej poprzedniego high", null],
+  ["gap_down", "Gap Down", "Otwarcie poniżej poprzedniego low", null],
+];
+

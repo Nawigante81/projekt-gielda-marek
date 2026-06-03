@@ -1,0 +1,15 @@
+node_modules
+.next
+dist
+build
+coverage
+.git
+.vs
+.idea
+tsconfig.tsbuildinfo
+npm-debug.log
+yarn-error.log
+docker-compose.override.yml
+data/*.db
+data/*.sqlite
+data/*.sqlite3

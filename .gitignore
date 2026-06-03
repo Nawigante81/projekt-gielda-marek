@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-msi/
+release/
+out/
+*.asar
+*.exe
+*.msi
+.env

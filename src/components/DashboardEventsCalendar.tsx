@@ -53,6 +53,23 @@ interface DashboardEventsCalendarProps {
 }
 
 export default function DashboardEventsCalendar({ events, earnings, onOpenTicker, onOpenMarket }: DashboardEventsCalendarProps) {
+  const totalRows = events.length + earnings.length;
+  if (totalRows === 0) {
+    return (
+      <div className="card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
+            <CalendarDays size={15} className="text-blue-400" /> Kalendarz wydarzeń
+          </div>
+          <div className="text-xs text-slate-500">0 pozycji</div>
+        </div>
+        <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-3 py-4 text-sm text-slate-500">
+          Brak aktywnych sygnałów. Uruchom analizę lub rozszerz watchlistę.
+        </div>
+      </div>
+    );
+  }
+
   const buckets = [
     { label: "Dzisiaj", rows: [...earnings.filter((event) => formatDaysUntil(event.event_date) === "dzisiaj"), ...events.filter((event) => formatDaysUntil(event.event_date) === "dzisiaj")] },
     { label: "Jutro", rows: [...earnings.filter((event) => formatDaysUntil(event.event_date) === "jutro"), ...events.filter((event) => formatDaysUntil(event.event_date) === "jutro")] },
@@ -65,7 +82,7 @@ export default function DashboardEventsCalendar({ events, earnings, onOpenTicker
         <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
           <CalendarDays size={15} className="text-blue-400" /> Kalendarz wydarzeń
         </div>
-        <div className="text-xs text-slate-500">{events.length + earnings.length} pozycji</div>
+        <div className="text-xs text-slate-500">{totalRows} pozycji</div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
         {buckets.map((bucket) => (

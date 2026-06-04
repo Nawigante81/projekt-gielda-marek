@@ -1,4 +1,5 @@
 import { getSettingValue, queryRows, runSql, upsertSetting } from "./postgres-access";
+import { isPostgresEnabled } from "./database-config";
 
 type FearGreedResponse = {
   fear_and_greed?: {
@@ -39,6 +40,64 @@ export interface MarketSentimentHistoryRow {
 
 const CACHE_KEY = "market_sentiment_cache";
 const CACHE_TTL_MS = 30 * 60 * 1000;
+const WARNING_TTL_MS = 5 * 60 * 1000;
+const warningCache = new Map<string, number>();
+let ensureHistoryTablePromise: Promise<void> | null = null;
+
+function isMissingRelationError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const postgresCode = (error as Error & { code?: string }).code;
+  return postgresCode === "42P01" || /market_sentiment_history/i.test(error.message);
+}
+
+function warnThrottled(key: string, message: string, error?: unknown): void {
+  const now = Date.now();
+  const lastAt = warningCache.get(key) || 0;
+  if (now - lastAt < WARNING_TTL_MS) return;
+  warningCache.set(key, now);
+
+  if (process.env.NODE_ENV === "development") {
+    console.warn(message, error);
+  } else {
+    console.warn(message);
+  }
+}
+
+async function ensureMarketSentimentHistoryTable(): Promise<void> {
+  if (!ensureHistoryTablePromise) {
+    ensureHistoryTablePromise = (async () => {
+      const createTableSql = isPostgresEnabled()
+        ? `CREATE TABLE IF NOT EXISTS market_sentiment_history (
+             id BIGSERIAL PRIMARY KEY,
+             captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+             fear_greed_score DOUBLE PRECISION,
+             fear_greed_label TEXT,
+             put_call_ratio DOUBLE PRECISION,
+             vix_value DOUBLE PRECISION,
+             breadth_score DOUBLE PRECISION
+           )`
+        : `CREATE TABLE IF NOT EXISTS market_sentiment_history (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+             fear_greed_score REAL,
+             fear_greed_label TEXT,
+             put_call_ratio REAL,
+             vix_value REAL,
+             breadth_score REAL
+           )`;
+
+      const createIndexSql = "CREATE INDEX IF NOT EXISTS idx_market_sentiment_history_captured_at ON market_sentiment_history(captured_at DESC)";
+
+      await runSql(createTableSql);
+      await runSql(createIndexSql);
+    })().catch((error) => {
+      ensureHistoryTablePromise = null;
+      throw error;
+    });
+  }
+
+  await ensureHistoryTablePromise;
+}
 
 function parseNumber(value: string | undefined | null): number | null {
   if (!value) return null;
@@ -84,27 +143,38 @@ function parseCachedSnapshot(value: string | null): { cachedAt: string; data: Ma
 }
 
 async function saveSnapshotHistory(snapshot: MarketSentimentSnapshot): Promise<void> {
-  await runSql(
-    `INSERT INTO market_sentiment_history (captured_at, fear_greed_score, put_call_ratio, fear_greed_label, vix_value, breadth_score)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [
-      new Date().toISOString(),
-      snapshot.fearGreedScore,
-      snapshot.putCallRatio,
-      snapshot.fearGreedLabel,
-      snapshot.vixValue,
-      snapshot.breadthScore,
-    ]
-  );
+  try {
+    await ensureMarketSentimentHistoryTable();
 
-  await runSql(`
-    DELETE FROM market_sentiment_history
-    WHERE id NOT IN (
-      SELECT id FROM market_sentiment_history
-      ORDER BY captured_at DESC
-      LIMIT 90
-    )
-  `);
+    await runSql(
+      `INSERT INTO market_sentiment_history (captured_at, fear_greed_score, put_call_ratio, fear_greed_label, vix_value, breadth_score)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        new Date().toISOString(),
+        snapshot.fearGreedScore,
+        snapshot.putCallRatio,
+        snapshot.fearGreedLabel,
+        snapshot.vixValue,
+        snapshot.breadthScore,
+      ]
+    );
+
+    await runSql(`
+      DELETE FROM market_sentiment_history
+      WHERE id NOT IN (
+        SELECT id FROM market_sentiment_history
+        ORDER BY captured_at DESC
+        LIMIT 90
+      )
+    `);
+  } catch (error) {
+    if (isMissingRelationError(error)) {
+      warnThrottled("market-sentiment-history-save-missing", "Market sentiment history unavailable during save", error);
+      return;
+    }
+
+    warnThrottled("market-sentiment-history-save-error", "Market sentiment history save failed", error);
+  }
 }
 
 async function getCachedSnapshot(): Promise<MarketSentimentSnapshot | null> {
@@ -210,13 +280,24 @@ export async function fetchExternalMarketSentiment(): Promise<MarketSentimentSna
 }
 
 export async function getMarketSentimentHistory(limit = 7): Promise<MarketSentimentHistoryRow[]> {
-  return queryRows<MarketSentimentHistoryRow>(
-    `
-      SELECT captured_at, fear_greed_score, put_call_ratio, fear_greed_label, vix_value, breadth_score
-      FROM market_sentiment_history
-      ORDER BY captured_at DESC
-      LIMIT ?
-    `,
-    [limit]
-  );
+  try {
+    await ensureMarketSentimentHistoryTable();
+    return await queryRows<MarketSentimentHistoryRow>(
+      `
+        SELECT captured_at, fear_greed_score, put_call_ratio, fear_greed_label, vix_value, breadth_score
+        FROM market_sentiment_history
+        ORDER BY captured_at DESC
+        LIMIT ?
+      `,
+      [limit]
+    );
+  } catch (error) {
+    if (isMissingRelationError(error)) {
+      warnThrottled("market-sentiment-history-read-missing", "Market sentiment history unavailable during read", error);
+      return [];
+    }
+
+    warnThrottled("market-sentiment-history-read-error", "Market sentiment history read failed", error);
+    return [];
+  }
 }

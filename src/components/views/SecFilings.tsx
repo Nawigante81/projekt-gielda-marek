@@ -96,6 +96,7 @@ export default function SecFilings() {
     setActiveTicker("");
     void fetchFilings("");
   };
+  const hasItems = items.length > 0;
 
   return (
     <div className="space-y-4">
@@ -157,7 +158,7 @@ export default function SecFilings() {
         <div className="flex h-48 items-center justify-center">
           <Loader2 className="animate-spin text-blue-500" size={24} />
         </div>
-      ) : (
+      ) : hasItems ? (
         <div className="card overflow-hidden">
           <div className="hidden md:block">
             <table className="w-full">
@@ -251,13 +252,12 @@ export default function SecFilings() {
               </div>
             ))}
           </div>
-
-          {items.length === 0 && (
-            <div className="p-12 text-center text-slate-600">
-              <FileSearch size={32} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm">Brak dokumentów SEC. Podaj ticker i kliknij „Pobierz z SEC”.</div>
-            </div>
-          )}
+        </div>
+      ) : (
+        <div className="card p-6 sm:p-8 text-center text-slate-500">
+          <FileSearch size={30} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm text-slate-300">Brak dokumentów SEC w lokalnej bazie.</div>
+          <div className="mt-2 text-xs text-slate-600">Wpisz ticker, na przykład `AAPL`, a potem kliknij `Pobierz z SEC`, aby zaciągnąć realne filingi.</div>
         </div>
       )}
     </div>

@@ -91,6 +91,12 @@ export interface RankedItem {
   rsi_14: number | null;
   overall_signal: string | null;
   sector: string;
+  source_kind?: "portfolio" | "watchlist" | "ranking" | "history" | "seed";
+  setup_type?: "LONG" | "SHORT" | "WATCH";
+  momentum_label?: string;
+  reason?: string;
+  risk?: string;
+  potential?: string;
 }
 
 export interface PerformanceSummary {
@@ -175,6 +181,16 @@ export interface SectorRow {
 export interface WatchlistItem {
   id: number;
   ticker: string;
+  company_name?: string;
+  current_price?: number | null;
+  change_pct?: number | null;
+  ai_score?: number | null;
+  recommendation?: string | null;
+  rsi_14?: number | null;
+  adx?: number | null;
+  overall_signal?: string | null;
+  news_sentiment_score?: number | null;
+  sector?: string | null;
   auto_analyze?: number;
   latest_alert?: string | null;
 }
@@ -195,8 +211,13 @@ export interface ExplanationState {
   companyName: string;
   aiScore: number;
   recommendation: string;
+  actionLabel?: string;
   probability: number;
   riskLabel: string;
   reasons: string[];
+  risks?: string[];
+  technicalReasons?: string[];
+  fundamentalReasons?: string[];
+  changeTriggers?: string[];
   marketContext: string[];
 }

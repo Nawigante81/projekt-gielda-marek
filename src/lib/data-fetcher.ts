@@ -7,16 +7,24 @@ import {
   type PriceData,
 } from "./market-providers";
 import {
+  queryRows,
   queryRow,
   runSql,
   upsertCurrentPrice,
   upsertPriceHistoryRow,
   upsertStockTimestamp,
 } from "./postgres-access";
+import { enrichNewsRows, stripHtml } from "./news-intelligence";
 import { aggregateNewsSentiment, analyzeNewsArticle, type AggregatedSentimentResult } from "./news-sentiment";
 
 async function saveNewsArticles(ticker: string, articles: NewsArticle[]): Promise<AggregatedSentimentResult> {
-  for (const article of articles) {
+  const normalizedArticles = articles.map((article) => ({
+    ...article,
+    headline: stripHtml(article.headline),
+    summary: stripHtml(article.summary),
+  }));
+
+  for (const article of normalizedArticles) {
     const sentiment = analyzeNewsArticle({
       headline: article.headline,
       summary: article.summary,
@@ -45,8 +53,31 @@ async function saveNewsArticles(ticker: string, articles: NewsArticle[]): Promis
     }
   }
 
+  const savedRows = await queryRows<{
+    id: number;
+    ticker: string | null;
+    headline: string;
+    summary: string | null;
+    source: string | null;
+    url: string | null;
+    published_at: string | null;
+    sentiment_label: "positive" | "neutral" | "negative" | null;
+    sentiment_score: number | null;
+    impact_score: number | null;
+    clean_summary?: string | null;
+    impact_label?: string | null;
+    priority_category?: string | null;
+    priority_rank?: number | null;
+    priority_score?: number | null;
+    ai_summary_json?: string | null;
+  }>(
+    "SELECT * FROM news WHERE ticker = ? ORDER BY published_at DESC LIMIT ?",
+    [ticker, Math.max(normalizedArticles.length, 8)]
+  );
+  await enrichNewsRows(savedRows, new Set<string>([ticker.toUpperCase()]));
+
   const aggregated = aggregateNewsSentiment(
-    articles.map((article) => ({
+    normalizedArticles.map((article) => ({
       headline: article.headline,
       summary: article.summary,
       publishedAt: article.published_at,

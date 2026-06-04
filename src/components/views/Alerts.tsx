@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "@/store/useAppStore";
-import { Bell, CheckCheck, AlertCircle, Info, AlertTriangle, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, AlertCircle, Info, AlertTriangle, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface Alert {
@@ -37,6 +37,7 @@ export default function Alerts() {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread" | "critical" | "warning" | "info">("all");
+  const [showRules, setShowRules] = useState(false);
 
   const fetchAlerts = useCallback(async () => {
     const [alertRes, rulesRes] = await Promise.all([
@@ -138,9 +139,18 @@ export default function Alerts() {
             <div className="text-sm font-medium text-white">Reguły alertów</div>
             <div className="text-xs text-slate-500">Włączaj i wyłączaj reguły wykrywania bez zatrzymywania analizy.</div>
           </div>
-          <div className="text-xs text-slate-500">{rules.filter((rule) => rule.is_enabled === 1).length}/{rules.length} aktywne</div>
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-slate-500">{rules.filter((rule) => rule.is_enabled === 1).length}/{rules.length} aktywne</div>
+            <button
+              type="button"
+              onClick={() => setShowRules((current) => !current)}
+              className="rounded-md border border-slate-800 px-2 py-1 text-[11px] text-slate-400 transition-colors hover:border-slate-700 hover:text-white md:hidden"
+            >
+              {showRules ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`${showRules ? "grid" : "hidden"} grid-cols-1 gap-2 sm:grid-cols-2 md:grid`}>
           {rules.map((rule) => (
             <button
               key={rule.rule_key}

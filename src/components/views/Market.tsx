@@ -118,6 +118,16 @@ export default function Market() {
   const indexBySymbol = Object.fromEntries(indices.map(i => [i.symbol, i]));
   const spy = indexBySymbol["SPY"];
   const vix = indexBySymbol["^VIX"];
+  const hasLiveIndices = indices.some((idx) => idx.value !== null || idx.change_pct !== null);
+  const meaningfulHeatmap = heatmap.filter((tile) => tile.price !== null || tile.change_pct !== 0 || tile.ai_score !== 0);
+  const hasMeaningfulHeatmap = meaningfulHeatmap.length > 0;
+  const meaningfulSectors = sectors.filter((sector) =>
+    sector.avg_change_pct !== 0 ||
+    sector.sentiment_score !== 0 ||
+    (sector.best_change_pct !== null && sector.best_change_pct !== 0) ||
+    (sector.worst_change_pct !== null && sector.worst_change_pct !== 0)
+  );
+  const hasMeaningfulSectors = meaningfulSectors.length > 0;
 
   // Overall market sentiment
   const spyChange = spy?.change_pct || 0;
@@ -149,21 +159,21 @@ export default function Market() {
           <div className="grid grid-cols-3 gap-6 text-right">
             <div>
                       <div className="text-xs text-slate-500">S&P 500</div>
-                      <div className="font-mono text-sm text-white">{spy?.value ? `$${spy.value.toFixed(2)}` : "—"}</div>
+                      <div className="font-mono text-sm text-white">{spy?.value ? `$${spy.value.toFixed(2)}` : "Brak danych"}</div>
                       <PriceChange value={spy?.change_pct ?? null} className="text-xs" />
                       <TrendLabel delta={spy?.change_pct} />
                     </div>
                     <div>
                       <div className="text-xs text-slate-500">VIX</div>
                       <div className={`font-mono text-sm ${vixVal > 25 ? "text-red-400" : vixVal < 15 ? "text-emerald-400" : "text-white"}`}>
-                        {vix?.value ? vix.value.toFixed(2) : "—"}
+                        {vix?.value ? vix.value.toFixed(2) : "Brak danych"}
                       </div>
                       <PriceChange value={vix?.change_pct ?? null} className="text-xs" />
                       <TrendLabel delta={vix?.change_pct} />
                     </div>
                     <div>
                       <div className="text-xs text-slate-500">Nasdaq 100</div>
-                      <div className="font-mono text-sm text-white">{indexBySymbol["QQQ"]?.value ? `$${indexBySymbol["QQQ"].value.toFixed(2)}` : "—"}</div>
+                      <div className="font-mono text-sm text-white">{indexBySymbol["QQQ"]?.value ? `$${indexBySymbol["QQQ"].value.toFixed(2)}` : "Brak danych"}</div>
                       <PriceChange value={indexBySymbol["QQQ"]?.change_pct ?? null} className="text-xs" />
                       <TrendLabel delta={indexBySymbol["QQQ"]?.change_pct} />
                     </div>
@@ -172,18 +182,20 @@ export default function Market() {
               </div>
 
       {/* Indices by category */}
-      {CATEGORIES.map(category => {
+      {hasLiveIndices ? CATEGORIES.map(category => {
         const categoryIndices = indices.filter(idx => {
           const meta = INDEX_META[idx.symbol];
           return meta && meta.category === category;
         });
+        const visibleIndices = categoryIndices.filter((idx) => idx.value !== null || idx.change_pct !== null);
+        if (visibleIndices.length === 0) return null;
         if (categoryIndices.length === 0) return null;
 
         return (
           <div key={category}>
             <h2 className="text-sm font-medium text-slate-400 mb-2">{category}</h2>
             <div className="grid grid-cols-2 gap-3">
-              {categoryIndices.map(idx => {
+              {visibleIndices.map(idx => {
                 const meta = INDEX_META[idx.symbol] || { icon: "📊", description: idx.name };
                 const trendIcon = idx.change_pct && idx.change_pct > 0
                   ? <TrendingUp size={12} className="text-emerald-400" />
@@ -230,7 +242,13 @@ export default function Market() {
             </div>
           </div>
         );
-      })}
+      }) : (
+        <div className="card p-8 text-center text-slate-500">
+          <BarChart2 size={32} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm text-slate-400">Brak świeżych danych indeksowych.</div>
+          <div className="mt-2 text-xs text-slate-600">Uruchom analizę lub odśwież integracje rynkowe, aby pobrać ceny i zmiany.</div>
+        </div>
+      )}
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -247,8 +265,9 @@ export default function Market() {
             ))}
           </div>
         </div>
+        {hasMeaningfulHeatmap ? (
         <div className="grid grid-cols-6 gap-2">
-          {heatmap.slice(0, 24).map((tile) => {
+          {meaningfulHeatmap.slice(0, 24).map((tile) => {
             const bg = tile.change_pct >= 2 ? "bg-emerald-500/25 border-emerald-700/40" :
               tile.change_pct > 0 ? "bg-emerald-500/10 border-emerald-800/30" :
               tile.change_pct <= -2 ? "bg-red-500/25 border-red-700/40" :
@@ -269,13 +288,19 @@ export default function Market() {
             );
           })}
         </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-sm text-slate-500">
+            Heatmapa pojawi się po pobraniu realnych zmian cen dla wybranego indeksu.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="card p-4">
           <div className="text-sm font-medium text-slate-300 mb-3">Analiza sektorów</div>
+          {hasMeaningfulSectors ? (
           <div className="space-y-2">
-            {sectors.map((sector) => (
+            {meaningfulSectors.map((sector) => (
               <div key={sector.sector} className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -296,6 +321,11 @@ export default function Market() {
               </div>
             ))}
           </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-sm text-slate-500">
+              Analiza sektorów pojawi się po zebraniu zmian cen i sentymentu dla spółek w heatmapie.
+            </div>
+          )}
         </div>
 
         <div className="card p-4">
@@ -322,13 +352,6 @@ export default function Market() {
           </div>
         </div>
       </div>
-
-      {indices.length === 0 && (
-        <div className="card p-12 text-center text-slate-600">
-          <BarChart2 size={32} className="mx-auto mb-2 opacity-30" />
-          <div className="text-sm">Brak danych rynkowych. Uruchom analizę, aby pobrać dane.</div>
-        </div>
-      )}
     </div>
   );
 }

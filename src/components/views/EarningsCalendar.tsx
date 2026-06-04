@@ -74,6 +74,7 @@ export default function EarningsCalendar() {
     { label: "Ten tydzień", rows: data?.buckets.thisWeek || [] },
     { label: "30 dni", rows: data?.buckets.next30Days || [] },
   ];
+  const hasEvents = (data?.events.length || 0) > 0;
 
   return (
     <div className="space-y-4">
@@ -123,6 +124,7 @@ export default function EarningsCalendar() {
         ))}
       </div>
 
+      {hasEvents ? (
       <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
@@ -164,13 +166,14 @@ export default function EarningsCalendar() {
             })}
           </tbody>
         </table>
-        {(data?.events.length || 0) === 0 && (
-          <div className="p-12 text-center text-slate-600">
-            <CalendarDays size={32} className="mx-auto mb-2 opacity-30" />
-            <div className="text-sm">Brak earnings w kalendarzu. Dodaj tickery do portfolio/watchlisty i odśwież.</div>
-          </div>
-        )}
       </div>
+      ) : (
+        <div className="card p-6 sm:p-8 text-center text-slate-500">
+          <CalendarDays size={30} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm text-slate-300">Brak earnings w kalendarzu.</div>
+          <div className="mt-2 text-xs text-slate-600">Dodaj tickery do portfolio lub watchlisty, a potem kliknij `Odśwież`, aby pobrać najbliższe wyniki.</div>
+        </div>
+      )}
     </div>
   );
 }

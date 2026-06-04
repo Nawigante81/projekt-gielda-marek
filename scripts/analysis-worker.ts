@@ -4,6 +4,7 @@ import { runFullAnalysis } from "../src/lib/analysis-engine";
 import { getSettingValue, queryRow, queryRows, upsertSetting } from "../src/lib/postgres-access";
 import { generateSecFilingAlerts, refreshSecFilings } from "../src/lib/sec";
 import { generateUpcomingEarningsAlerts } from "../src/lib/earnings";
+import { fetchExternalMarketSentiment } from "../src/lib/market-sentiment";
 
 dotenv.config();
 
@@ -12,6 +13,8 @@ const configuredTimes = process.env.ANALYSIS_WORKER_TIMES_PL || "16:35,18:45,22:
 const secRefreshTime = process.env.ANALYSIS_WORKER_SEC_REFRESH_PL || "21:45";
 const secRefreshEnabled = process.env.ANALYSIS_WORKER_SEC_REFRESH_ENABLED !== "0";
 const secRefreshLimit = Number(process.env.ANALYSIS_WORKER_SEC_REFRESH_LIMIT || "25");
+const marketSentimentCron = process.env.ANALYSIS_WORKER_MARKET_SENTIMENT_CRON || "*/30 14-23 * * 1-5";
+const marketSentimentEnabled = process.env.ANALYSIS_WORKER_MARKET_SENTIMENT_ENABLED !== "0";
 
 type LatestRun = {
   created_at: string;
@@ -140,6 +143,17 @@ async function refreshSecBeforeCloseReport(): Promise<void> {
   console.log("[analysis-worker] SEC refresh finished");
 }
 
+async function refreshMarketSentimentSnapshot(): Promise<void> {
+  try {
+    const snapshot = await fetchExternalMarketSentiment();
+    console.log(
+      `[analysis-worker] Market sentiment refreshed fg=${snapshot.fearGreedScore ?? "null"} pcr=${snapshot.putCallRatio ?? "null"} vix=${snapshot.vixValue ?? "null"} breadth=${snapshot.breadthScore ?? "null"}`
+    );
+  } catch (error) {
+    console.error("[analysis-worker] Market sentiment refresh failed", error);
+  }
+}
+
 async function main(): Promise<void> {
   if (!process.env.DATABASE_URL && process.env.DATABASE_PROVIDER === "postgres") {
     throw new Error("DATABASE_URL is not configured for analysis worker.");
@@ -175,6 +189,17 @@ async function main(): Promise<void> {
       { timezone }
     );
     console.log(`[analysis-worker] Registered SEC refresh ${secRefreshTime} (${expression})`);
+  }
+
+  if (marketSentimentEnabled) {
+    cron.schedule(
+      marketSentimentCron,
+      () => {
+        void refreshMarketSentimentSnapshot();
+      },
+      { timezone }
+    );
+    console.log(`[analysis-worker] Registered market sentiment refresh (${marketSentimentCron})`);
   }
 }
 

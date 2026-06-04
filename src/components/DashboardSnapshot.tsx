@@ -17,6 +17,29 @@ interface DashboardSnapshotProps {
 }
 
 export default function DashboardSnapshot({ secFilings, onOpenSec, onOpenEarnings, onOpenTicker }: DashboardSnapshotProps) {
+  if (secFilings.length === 0) {
+    return (
+      <div className="card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
+            <FileSearch size={15} className="text-blue-400" /> SEC / earnings snapshot
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onOpenSec} className="text-xs text-blue-400 hover:text-blue-300">
+              SEC →
+            </button>
+            <button onClick={onOpenEarnings} className="text-xs text-blue-400 hover:text-blue-300">
+              Earnings →
+            </button>
+          </div>
+        </div>
+        <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-3 py-4 text-sm text-slate-500">
+          Brak świeżych filingów SEC w cache dashboardu.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="card p-4">
       <div className="mb-3 flex items-center justify-between">

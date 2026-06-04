@@ -51,6 +51,7 @@ import type {
   WatchlistItem,
 } from "@/components/views/dashboard-types";
 import {
+  buildReportSections,
   clamp,
   compactNumber,
   formatCurrency,
@@ -64,8 +65,10 @@ import {
   recommendationFromScore,
   riskTone,
   scoreBand,
+  toActionLabel,
   toRiskLabel,
 } from "@/components/views/dashboard-utils";
+import { useDashboardData } from "@/components/views/useDashboardData";
 import toast from "react-hot-toast";
 
 const INDEX_ICONS: Record<string, string> = {
@@ -103,46 +106,69 @@ function buildExplanationFromPortfolio(
 ): ExplanationState {
   const score = item.ai_score ?? 0;
   const reasons: string[] = [];
+  const technicalReasons: string[] = [];
+  const fundamentalReasons: string[] = [];
+  const risks: string[] = [];
   const context: string[] = [];
 
   if ((item.volume ?? 0) > ((item.avg_volume ?? Infinity) * 1.5)) {
-    reasons.push(`wzrost wolumenu +${(((item.volume || 0) / Math.max(item.avg_volume || 1, 1)) * 100 - 100).toFixed(0)}%`);
+    technicalReasons.push(`wzrost wolumenu +${(((item.volume || 0) / Math.max(item.avg_volume || 1, 1)) * 100 - 100).toFixed(0)}%`);
   }
   if (item.signal_sma === "bullish" || item.signal_ema === "bullish") {
-    reasons.push("trend powyżej kluczowych średnich");
+    technicalReasons.push("trend powyżej kluczowych średnich");
   }
   if (item.signal_macd === "bullish") {
-    reasons.push("pozytywny sygnał MACD");
+    technicalReasons.push("pozytywny sygnał MACD");
+  } else if (item.signal_macd === "bearish") {
+    risks.push("MACD bearish");
   }
   if ((item.rsi_14 ?? 50) >= 45 && (item.rsi_14 ?? 50) <= 65) {
-    reasons.push(`RSI w zdrowym zakresie (${(item.rsi_14 ?? 0).toFixed(1)})`);
+    technicalReasons.push(`RSI w zdrowym zakresie (${(item.rsi_14 ?? 0).toFixed(1)})`);
   } else if ((item.rsi_14 ?? 50) < 35) {
-    reasons.push(`RSI w strefie wyprzedania (${(item.rsi_14 ?? 0).toFixed(1)})`);
+    technicalReasons.push(`RSI w strefie wyprzedania (${(item.rsi_14 ?? 0).toFixed(1)})`);
+  } else if ((item.rsi_14 ?? 50) > 70) {
+    risks.push("RSI blisko wykupienia");
   }
   if ((item.news_sentiment_score ?? 0) >= 20) {
-    reasons.push("pozytywne newsy i sentyment");
+    fundamentalReasons.push("pozytywne newsy i sentyment");
   }
   if (earnings) {
     context.push(`wyniki za ${formatDaysUntil(earnings.event_date)}`);
   }
   if (secFilings.length > 0) {
-    context.push(`świeży SEC: ${secFilings[0].form} (${formatDaysUntil(secFilings[0].filing_date)})`);
+    fundamentalReasons.push(`brak negatywnego filing SEC (${secFilings[0].form})`);
   }
   if (alerts.some((alert) => alert.ticker === item.ticker && alert.severity === "warning")) {
     context.push("aktywny alert ryzyka");
+    risks.push("aktywny alert ryzyka");
   }
   if (sectorLeader) {
     context.push(`sektor lidera: ${sectorLeader}`);
   }
+  if ((item.change_pct ?? 0) < 0) {
+    risks.push("słabnący momentum");
+  }
+
+  reasons.push(...technicalReasons, ...fundamentalReasons);
+  const stopLoss = getStopLoss(item);
+  const takeProfit = getTakeProfit(item);
 
   return {
     ticker: item.ticker,
     companyName: item.company_name || item.ticker,
     aiScore: score,
     recommendation: scoreBand(score),
+    actionLabel: toActionLabel(score),
     probability: clamp(Math.round(score * 0.82), 18, 92),
     riskLabel: toRiskLabel(score, item.adx),
     reasons: reasons.slice(0, 5),
+    risks: Array.from(new Set(risks)).slice(0, 3),
+    technicalReasons: technicalReasons.slice(0, 3),
+    fundamentalReasons: fundamentalReasons.slice(0, 3),
+    changeTriggers: [
+      takeProfit ? `BUY po wybiciu powyżej ${formatCurrency(takeProfit, item.currency)} przy rosnącym wolumenie.` : "",
+      stopLoss ? `REDUCE po zejściu poniżej ${formatCurrency(stopLoss, item.currency)}.` : "",
+    ].filter(Boolean),
     marketContext: context.slice(0, 4),
   };
 }
@@ -156,18 +182,21 @@ function buildExplanationFromRankedItem(
   mode: "best" | "worst"
 ): ExplanationState {
   const reasons: string[] = [];
+  const technicalReasons: string[] = [];
+  const fundamentalReasons: string[] = [];
+  const risks: string[] = [];
   const context: string[] = [];
 
   if (mode === "best") {
-    if (item.ai_score >= 85) reasons.push("bardzo wysoki AI Score i przewaga techniczna");
-    if ((item.change_pct ?? 0) > 2) reasons.push(`silne momentum (${item.change_pct.toFixed(2)}%)`);
-    if ((item.rsi_14 ?? 50) < 40) reasons.push(`RSI daje jeszcze miejsce na ruch (${(item.rsi_14 ?? 0).toFixed(1)})`);
-    reasons.push(getPotentialReason(item));
+    if (item.ai_score >= 85) technicalReasons.push("bardzo wysoki AI Score i przewaga techniczna");
+    if ((item.change_pct ?? 0) > 2) technicalReasons.push(`silne momentum (${item.change_pct.toFixed(2)}%)`);
+    if ((item.rsi_14 ?? 50) < 40) technicalReasons.push(`RSI daje jeszcze miejsce na ruch (${(item.rsi_14 ?? 0).toFixed(1)})`);
+    fundamentalReasons.push(getPotentialReason(item));
   } else {
-    if (item.ai_score < 35) reasons.push("niski AI Score i słaba jakość układu");
-    if ((item.change_pct ?? 0) < -2) reasons.push(`ujemne momentum (${item.change_pct.toFixed(2)}%)`);
-    if ((item.rsi_14 ?? 50) > 70) reasons.push(`wykupienie podnosi ryzyko korekty (${(item.rsi_14 ?? 0).toFixed(1)})`);
-    reasons.push(getDownsideReason(item));
+    if (item.ai_score < 35) risks.push("niski AI Score i słaba jakość układu");
+    if ((item.change_pct ?? 0) < -2) risks.push(`ujemne momentum (${item.change_pct.toFixed(2)}%)`);
+    if ((item.rsi_14 ?? 50) > 70) risks.push(`wykupienie podnosi ryzyko korekty (${(item.rsi_14 ?? 0).toFixed(1)})`);
+    fundamentalReasons.push(getDownsideReason(item));
   }
 
   if (earnings) {
@@ -184,12 +213,14 @@ function buildExplanationFromRankedItem(
   }
 
   const scoreLabel = scoreBand(item.ai_score);
+  reasons.push(...technicalReasons, ...fundamentalReasons);
 
   return {
     ticker: item.ticker,
     companyName: item.company_name || item.ticker,
     aiScore: item.ai_score ?? 0,
     recommendation: scoreLabel,
+    actionLabel: mode === "best" ? "BUY" : "REDUCE",
     probability: mode === "best"
       ? clamp(Math.round((item.ai_score ?? 0) * 0.8), 22, 93)
       : clamp(Math.round((100 - (item.ai_score ?? 0)) * 0.72), 15, 84),
@@ -197,430 +228,65 @@ function buildExplanationFromRankedItem(
       ? ((item.ai_score ?? 0) >= 80 ? "Niskie" : (item.ai_score ?? 0) >= 65 ? "Średnie" : "Wysokie")
       : ((item.ai_score ?? 0) <= 25 ? "Wysokie" : "Średnie"),
     reasons: Array.from(new Set(reasons)).slice(0, 5),
+    risks: risks.slice(0, 3),
+    technicalReasons: technicalReasons.slice(0, 3),
+    fundamentalReasons: fundamentalReasons.slice(0, 3),
+    changeTriggers: mode === "best"
+      ? ["BUY po utrzymaniu siły i dalszym wzroście wolumenu.", "REDUCE przy utracie lokalnego wsparcia."]
+      : ["BUY dopiero po poprawie AI Score i momentum.", "REDUCE / SELL przy dalszym osłabieniu ceny."],
     marketContext: context.slice(0, 4),
   };
 }
 
 export default function Dashboard() {
-  const { setActiveView, setSelectedTicker, analysisRunning, setAnalysisRunning } = useAppStore();
-  const [indices, setIndices] = useState<MarketIndex[]>([]);
-  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [report, setReport] = useState<Report | null>(null);
-  const [rankings, setRankings] = useState<{
-    topBuy: RankedItem[];
-    topSell: RankedItem[];
-    topMomentum: RankedItem[];
-    topOversold: RankedItem[];
-    topOverbought: RankedItem[];
-  }>({ topBuy: [], topSell: [], topMomentum: [], topOversold: [], topOverbought: [] });
-  const [performance, setPerformance] = useState<PerformancePayload | null>(null);
-  const [heatmap, setHeatmap] = useState<HeatmapTile[]>([]);
-  const [events, setEvents] = useState<MarketEvent[]>([]);
-  const [earnings, setEarnings] = useState<EarningsEvent[]>([]);
-  const [secFilings, setSecFilings] = useState<SecFiling[]>([]);
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [sectors, setSectors] = useState<SectorRow[]>([]);
-  const [marketSentimentData, setMarketSentimentData] = useState<MarketSentimentSnapshot | null>(null);
-  const [vixHistory, setVixHistory] = useState<Array<{ date: string; close: number }>>([]);
-  const [watchlistActivity, setWatchlistActivity] = useState({ total: 0, autoAnalyze: 0, withAlerts: 0 });
-  const [loading, setLoading] = useState(true);
-  const [lastRun, setLastRun] = useState<string | null>(null);
-  const [explanation, setExplanation] = useState<ExplanationState | null>(null);
-  const [mobileAccordion, setMobileAccordion] = useState({
-    summary: true,
-    portfolio: false,
-    market: false,
-    opportunities: false,
-    calendar: false,
-    alerts: false,
-  });
-
-  const fetchAll = useCallback(async () => {
-    try {
-      const [
-        mktRes,
-        portRes,
-        alertRes,
-        repRes,
-        statusRes,
-        rankingsRes,
-        performanceRes,
-        heatmapRes,
-        calendarRes,
-        watchRes,
-        earningsRes,
-        secRes,
-        newsRes,
-        sectorsRes,
-        sentimentRes,
-        vixRes,
-      ] = await Promise.all([
-        fetch("/api/market"),
-        fetch("/api/portfolio"),
-        fetch("/api/alerts?unread=true&limit=12"),
-        fetch("/api/reports"),
-        fetch("/api/analysis/run"),
-        fetch("/api/rankings?limit=8"),
-        fetch("/api/performance"),
-        fetch("/api/heatmap?index=SP500"),
-        fetch("/api/market-events"),
-        fetch("/api/watchlist"),
-        fetch("/api/earnings-calendar"),
-        fetch("/api/sec-filings"),
-        fetch("/api/news"),
-        fetch("/api/sectors"),
-        fetch("/api/market-sentiment"),
-        fetch("/api/ticker/%5EVIX"),
-      ]);
-
-      if (mktRes.ok) setIndices(await mktRes.json());
-      if (portRes.ok) setPortfolio(await portRes.json());
-      if (alertRes.ok) {
-        const unreadAlerts = await alertRes.json();
-        setAlerts(unreadAlerts);
-        useAppStore.getState().setUnreadAlerts(unreadAlerts.length);
-      }
-      if (repRes.ok) {
-        const reports = await repRes.json();
-        if (reports.length > 0) setReport(reports[0]);
-      }
-      if (statusRes.ok) {
-        const status = await statusRes.json();
-        setAnalysisRunning(status.running);
-        setLastRun(status.lastRun);
-      }
-      if (rankingsRes.ok) {
-        const data = await rankingsRes.json();
-        setRankings({
-          topBuy: data.topBuy || [],
-          topSell: data.topSell || [],
-          topMomentum: data.topMomentum || [],
-          topOversold: data.topOversold || [],
-          topOverbought: data.topOverbought || [],
-        });
-      }
-      if (performanceRes.ok) setPerformance(await performanceRes.json());
-      if (heatmapRes.ok) {
-        const data = await heatmapRes.json();
-        setHeatmap(data.tiles || []);
-      }
-      if (calendarRes.ok) {
-        const data = await calendarRes.json();
-        setEvents(data.events || []);
-      }
-      if (watchRes.ok) {
-        const watchlist = (await watchRes.json()) as WatchlistItem[];
-        setWatchlistActivity({
-          total: watchlist.length,
-          autoAnalyze: watchlist.filter((item) => item.auto_analyze === 1).length,
-          withAlerts: watchlist.filter((item) => Boolean(item.latest_alert)).length,
-        });
-      }
-      if (earningsRes.ok) {
-        const data = await earningsRes.json();
-        setEarnings(data.events || []);
-      }
-      if (secRes.ok) setSecFilings(await secRes.json());
-      if (newsRes.ok) setNews(await newsRes.json());
-      if (sectorsRes.ok) setSectors(await sectorsRes.json());
-      if (sentimentRes.ok) setMarketSentimentData(await sentimentRes.json());
-      if (vixRes.ok) {
-        const data = await vixRes.json();
-        setVixHistory((data.history || []).map((bar: { date: string; close: number }) => ({ date: bar.date, close: bar.close })));
-      }
-    } catch (error) {
-      console.error("Dashboard fetch error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [setAnalysisRunning]);
-
-  useEffect(() => {
-    void fetchAll();
-    const interval = setInterval(() => {
-      void fetchAll();
-    }, 60000);
-    return () => clearInterval(interval);
-  }, [fetchAll]);
-
-  const runAnalysis = async () => {
-    if (analysisRunning) return;
-    setAnalysisRunning(true);
-    toast.loading("Uruchamianie analizy...", { id: "analysis" });
-    try {
-      const res = await fetch("/api/analysis/run", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success("Analiza uruchomiona w tle", { id: "analysis" });
-        setTimeout(() => void fetchAll(), 5000);
-      } else {
-        toast.error(data.error || "Błąd analizy", { id: "analysis" });
-        setAnalysisRunning(false);
-      }
-    } catch {
-      toast.error("Błąd połączenia", { id: "analysis" });
-      setAnalysisRunning(false);
-    }
-  };
-
-  const totalPortfolioValue = portfolio.reduce((sum, item) => {
-    const price = item.current_price || item.purchase_price;
-    return item.status === "sold" ? sum : sum + price * item.shares;
-  }, 0);
-
-  const totalPnL = portfolio.reduce((sum, item) => {
-    const price = item.current_price || item.purchase_price;
-    return item.status === "sold" ? sum : sum + (price - item.purchase_price) * item.shares;
-  }, 0);
-
-  const totalCost = portfolio.reduce((sum, item) => (
-    item.status === "sold" ? sum : sum + item.purchase_price * item.shares
-  ), 0);
-  const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
-
-  const keyIndices = indices.filter((item) => KEY_INDICES.includes(item.symbol));
-  const vix = indices.find((item) => item.symbol === "^VIX");
-  const spy = indices.find((item) => item.symbol === "SPY");
-  const qqq = indices.find((item) => item.symbol === "QQQ");
-  const marketSentiment = vix && spy
-    ? (vix.value && vix.value > 25 ? "risk-off" : spy.change_pct && spy.change_pct > 0.5 ? "risk-on" : "neutral")
-    : "neutral";
-
-  const groupedHeatmap = useMemo(() => {
-    const grouped = new Map<string, HeatmapTile[]>();
-    for (const sector of SECTOR_ORDER) {
-      grouped.set(sector, []);
-    }
-
-    heatmap.forEach((tile) => {
-      const key = grouped.has(tile.sector) ? tile.sector : "Other";
-      const current = grouped.get(key) || [];
-      current.push(tile);
-      grouped.set(key, current);
-    });
-
-    return [...grouped.entries()]
-      .map(([sector, rows]) => ({
-        sector,
-        rows: rows.sort((left, right) => right.market_cap - left.market_cap).slice(0, 6),
-      }))
-      .filter((entry) => entry.rows.length > 0);
-  }, [heatmap]);
-
-  const strongestSector = sectors.length > 0 ? [...sectors].sort((a, b) => b.avg_change_pct - a.avg_change_pct)[0] : null;
-  const weakestSector = sectors.length > 0 ? [...sectors].sort((a, b) => a.avg_change_pct - b.avg_change_pct)[0] : null;
-
-  const earningsByTicker = useMemo(() => {
-    const map = new Map<string, EarningsEvent>();
-    earnings.forEach((event) => {
-      if (event.ticker && !map.has(event.ticker)) {
-        map.set(event.ticker, event);
-      }
-    });
-    return map;
-  }, [earnings]);
-
-  const filingsByTicker = useMemo(() => {
-    const map = new Map<string, SecFiling[]>();
-    secFilings.forEach((filing) => {
-      const current = map.get(filing.ticker) || [];
-      current.push(filing);
-      map.set(filing.ticker, current);
-    });
-    return map;
-  }, [secFilings]);
-
-  const aiInsights = useMemo(() => {
-    const insights: InsightItem[] = [];
-
-    portfolio.forEach((item) => {
-      if ((item.volume ?? 0) > ((item.avg_volume ?? Number.POSITIVE_INFINITY) * 1.8)) {
-        insights.push({
-          id: `volume-${item.ticker}`,
-          ticker: item.ticker,
-          icon: "fire",
-          title: `${item.ticker} +${(item.change_pct ?? 0).toFixed(2)}% przy wzroście wolumenu`,
-          description: `Wolumen ${Math.round(((item.volume || 0) / Math.max(item.avg_volume || 1, 1)) * 100)}% średniej`,
-          accent: "text-emerald-400",
-          sourceView: "ticker",
-          sourceTicker: item.ticker,
-        });
-      }
-      if (item.signal_sma === "bullish" || item.signal_ema === "bullish") {
-        insights.push({
-          id: `breakout-${item.ticker}`,
-          ticker: item.ticker,
-          icon: "fire",
-          title: `${item.ticker} wybicie techniczne`,
-          description: "Cena utrzymuje przewagę nad średnimi kroczącymi",
-          accent: "text-blue-300",
-          sourceView: "ticker",
-          sourceTicker: item.ticker,
-        });
-      }
-      const nextEarnings = earningsByTicker.get(item.ticker);
-      if (nextEarnings) {
-        insights.push({
-          id: `earnings-${item.ticker}`,
-          ticker: item.ticker,
-          icon: "warn",
-          title: `${item.ticker} publikuje wyniki za ${formatDaysUntil(nextEarnings.event_date)}`,
-          description: nextEarnings.title,
-          accent: "text-amber-300",
-          sourceView: "earnings",
-          sourceTicker: item.ticker,
-        });
-      }
-    });
-
-    alerts.forEach((alert) => {
-      if (alert.alert_type.includes("sec_")) {
-        insights.push({
-          id: `alert-${alert.id}`,
-          ticker: alert.ticker,
-          icon: "warn",
-          title: alert.message,
-          description: "świeży filing SEC wymaga interpretacji",
-          accent: "text-fuchsia-300",
-          sourceView: "sec",
-          sourceTicker: alert.ticker,
-        });
-      }
-      if (alert.alert_type.includes("earnings_upcoming")) {
-        insights.push({
-          id: `earn-alert-${alert.id}`,
-          ticker: alert.ticker,
-          icon: "warn",
-          title: alert.message,
-          description: "wyniki finansowe mogą podnieść zmienność",
-          accent: "text-amber-300",
-          sourceView: "earnings",
-          sourceTicker: alert.ticker,
-        });
-      }
-    });
-
-    if (strongestSector) {
-      insights.push({
-        id: "sector-strong",
-        ticker: strongestSector.best_ticker,
-        icon: "idea",
-        title: `Sektor dnia: ${strongestSector.sector}`,
-        description: `${strongestSector.avg_change_pct >= 0 ? "+" : ""}${strongestSector.avg_change_pct.toFixed(2)}% średnio`,
-        accent: "text-emerald-300",
-        sourceView: "market",
-        sourceTicker: strongestSector.best_ticker,
-      });
-    }
-    if (vix?.change_pct && vix.change_pct > 2) {
-      insights.push({
-        id: "vix-up",
-        ticker: "^VIX",
-        icon: "warn",
-        title: `VIX rośnie: ${vix.change_pct >= 0 ? "+" : ""}${vix.change_pct.toFixed(2)}%`,
-        description: "rynek wycenia wyższą zmienność krótkoterminową",
-        accent: "text-red-300",
-        sourceView: "market",
-        sourceTicker: null,
-      });
-    }
-    if (events.some((event) => ["CPI", "PPI", "NFP", "FOMC", "FED", "GDP", "Unemployment"].includes(event.event_type))) {
-      const macro = events.find((event) => ["CPI", "PPI", "NFP", "FOMC", "FED", "GDP", "Unemployment"].includes(event.event_type));
-      if (macro) {
-        insights.push({
-          id: `macro-${macro.id}`,
-          ticker: macro.ticker,
-          icon: "warn",
-          title: `${macro.event_type} w kalendarzu makro`,
-          description: `${macro.title} • ${new Date(macro.event_date).toLocaleString("pl-PL")}`,
-          accent: "text-amber-300",
-          sourceView: "market",
-          sourceTicker: null,
-        });
-      }
-    }
-
-    return insights.slice(0, 8);
-  }, [alerts, earningsByTicker, events, portfolio, strongestSector, vix]);
-
-  const bestOpportunities = useMemo(() => (
-    rankings.topBuy.slice(0, 5).map((item) => ({
-      ...item,
-      potential: getPotentialLabel(item),
-      risk: item.ai_score >= 85 ? "Niskie" : item.ai_score >= 70 ? "Średnie" : "Wysokie",
-      reason: getPotentialReason(item),
-    }))
-  ), [rankings.topBuy]);
-
-  const worstOpportunities = useMemo(() => (
-    rankings.topSell.slice(0, 5).map((item) => ({
-      ...item,
-      potential: getPotentialLabel({ ...item, ai_score: 100 - item.ai_score }),
-      risk: item.ai_score <= 25 ? "Wysokie" : "Średnie",
-      reason: getDownsideReason(item),
-    }))
-  ), [rankings.topSell]);
-
-  const marketNow = useMemo(() => {
-    const positiveTiles = heatmap.filter((tile) => tile.change_pct > 0).length;
-    const negativeTiles = heatmap.filter((tile) => tile.change_pct < 0).length;
-    const breadth = positiveTiles + negativeTiles > 0 ? positiveTiles / (positiveTiles + negativeTiles) : null;
-    const capitalFlow = strongestSector && weakestSector
-      ? strongestSector.avg_change_pct - weakestSector.avg_change_pct
-      : null;
-
-    return {
-      fearGreed: marketSentimentData?.fearGreedScore ?? null,
-      fearGreedLabel: marketSentimentData?.fearGreedLabel ?? null,
-      vix: vix?.value ?? null,
-      putCallRatio: marketSentimentData?.putCallRatio ?? null,
-      putCallType: marketSentimentData?.putCallType ?? null,
-      advanceDecline: breadth,
-      strongestSector,
-      weakestSector,
-      sectorOfTheDay: strongestSector?.sector || "Brak danych",
-      capitalFlow,
-      breadthLabel: breadth === null ? "Brak danych" : breadth > 0.58 ? "risk-on" : breadth < 0.42 ? "risk-off" : "neutral",
-    };
-  }, [heatmap, marketSentimentData, strongestSector, weakestSector, vix]);
-
-  const sentimentTrend = useMemo(() => {
-    const history = (marketSentimentData?.history || []).slice().reverse();
-    const fearGreed = history.map((entry) => entry.fear_greed_score).filter((value): value is number => value !== null);
-    const putCall = history.map((entry) => entry.put_call_ratio).filter((value): value is number => value !== null);
-    const breadth = history.map((entry) => entry.breadth_score).filter((value): value is number => value !== null);
-    return {
-      fearGreed,
-      putCall,
-      breadth,
-      latestFearGreedDelta: fearGreed.length >= 2 ? fearGreed[fearGreed.length - 1] - fearGreed[0] : null,
-      latestPutCallDelta: putCall.length >= 2 ? putCall[putCall.length - 1] - putCall[0] : null,
-      latestBreadthDelta: breadth.length >= 2 ? breadth[breadth.length - 1] - breadth[0] : null,
-    };
-  }, [marketSentimentData]);
-
-  const vixTrend = useMemo(() => {
-    const closes = vixHistory.map((bar) => bar.close).filter((value): value is number => value !== null && value !== undefined);
-    return {
-      closes: closes.slice(-7),
-      latestDelta: closes.length >= 2 ? closes[closes.length - 1] - closes[closes.length - 2] : null,
-    };
-  }, [vixHistory]);
-
-  useEffect(() => {
-    if (explanation || portfolio.length === 0) return;
-    const first = portfolio[0];
-    setExplanation(
-      buildExplanationFromPortfolio(
-        first,
-        earningsByTicker.get(first.ticker),
-        filingsByTicker.get(first.ticker) || [],
-        alerts,
-        strongestSector?.sector || null
-      )
-    );
-  }, [alerts, earningsByTicker, explanation, filingsByTicker, portfolio, strongestSector]);
+  const {
+    analysisRunning,
+    alerts,
+    aiInsights,
+    bestOpportunities,
+    fetchAll,
+    events,
+    filingsByTicker,
+    groupedHeatmap,
+    earnings,
+    earningsByTicker,
+    explanation,
+    inspectRankedItem,
+    indices,
+    lastRun,
+    loading,
+    marketDecision,
+    marketNow,
+    marketSentiment,
+    marketSentimentData,
+    mobileAccordion,
+    performance,
+    portfolio,
+    report,
+    reportDecisionSummary,
+    reportSections,
+    runAnalysis,
+    secFilings,
+    setActiveView,
+    setExplanation,
+    setSelectedTicker,
+    sentimentTrend,
+    strongestSector,
+    totalPortfolioValue,
+    totalPnL,
+    totalPnLPct,
+    toggleAccordion,
+    vixTrend,
+    watchlistActivity,
+    watchlist,
+    worstOpportunities,
+    weakestSector,
+    qqq,
+    spy,
+    vix,
+    keyIndices,
+    marketSentimentData: marketSentimentDataRef,
+  } = useDashboardData();
 
   const openTicker = (ticker: string | null | undefined) => {
     if (!ticker) return;
@@ -631,23 +297,6 @@ export default function Dashboard() {
   const openInsight = (item: InsightItem) => {
     if (item.sourceTicker) openTicker(item.sourceTicker);
     else setActiveView(item.sourceView);
-  };
-
-  const inspectRankedItem = (item: RankedItem, mode: "best" | "worst") => {
-    setExplanation(
-      buildExplanationFromRankedItem(
-        item,
-        earningsByTicker.get(item.ticker),
-        filingsByTicker.get(item.ticker) || [],
-        alerts,
-        strongestSector?.sector || null,
-        mode
-      )
-    );
-  };
-
-  const toggleAccordion = (section: keyof typeof mobileAccordion) => {
-    setMobileAccordion((current) => ({ ...current, [section]: !current[section] }));
   };
 
   if (loading) {
@@ -692,52 +341,55 @@ export default function Dashboard() {
       </div>
 
       <div className={`card p-4 ${
-        marketSentiment === "risk-on"
+        marketDecision.status === "BULLISH"
           ? "border-emerald-800/50 bg-emerald-900/10"
-          : marketSentiment === "risk-off"
+          : marketDecision.status === "RISK-OFF" || marketDecision.status === "BEARISH"
             ? "border-red-800/50 bg-red-900/10"
             : "border-slate-700/50 bg-slate-900/40"
       }`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Sentyment rynku</div>
-              <div className={`mt-1 text-2xl font-semibold ${
-                marketSentiment === "risk-on" ? "text-emerald-400" :
-                marketSentiment === "risk-off" ? "text-red-400" : "text-slate-300"
+        <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">AI Market Status</div>
+            <div className="mt-2 flex flex-wrap items-end gap-3">
+              <div className={`text-3xl font-semibold ${
+                marketDecision.status === "BULLISH" ? "text-emerald-400" :
+                marketDecision.status === "RISK-OFF" || marketDecision.status === "BEARISH" ? "text-red-400" : "text-slate-200"
               }`}>
-                {marketSentiment.toUpperCase()}
+                {marketDecision.status}
               </div>
+              <div className="text-xl font-semibold text-white">{marketDecision.score}/100</div>
             </div>
-            <div className="h-10 w-px bg-slate-800" />
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm lg:grid-cols-4">
-              <div className="text-slate-500">S&P 500: <span className="text-slate-300">{spy?.value ? formatCurrency(spy.value) : "—"}</span></div>
-              <div className="text-slate-500">Nasdaq: <span className="text-slate-300">{qqq?.value ? formatCurrency(qqq.value) : "—"}</span></div>
-              <div className="text-slate-500">VIX: <span className="text-slate-300">{vix?.value?.toFixed(2) || "—"}</span></div>
-              <div className="text-slate-500">
-                Fear & Greed:{" "}
-                <span className="text-slate-300">
-                  {marketNow.fearGreed === null ? "Brak danych" : `${marketNow.fearGreed.toFixed(1)}/100`}
-                </span>
-              </div>
+            <div className="mt-3 text-sm font-medium text-white">Decyzja: {marketDecision.action}</div>
+            <div className="mt-3 grid gap-2">
+              {marketDecision.reasons.map((reason) => (
+                <div key={reason} className="flex items-start gap-2 text-sm text-slate-300">
+                  <span className={reason.toLowerCase().includes("brak") || reason.toLowerCase().includes("ryzy") || reason.toLowerCase().includes("ostrzega") ? "mt-0.5 text-red-400" : "mt-0.5 text-emerald-400"}>
+                    {reason.toLowerCase().includes("brak") || reason.toLowerCase().includes("ryzy") || reason.toLowerCase().includes("ostrzega") ? "✗" : "✓"}
+                  </span>
+                  <span>{reason}</span>
+                </div>
+              ))}
+              {marketDecision.technicalNotes.map((note) => (
+                <div key={note} className="text-xs text-slate-500">{note}</div>
+              ))}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2">
-              <div className="text-slate-500">Breadth</div>
-              <div className="mt-1 text-white">
-                {marketNow.advanceDecline === null ? "Brak danych" : `${(marketNow.advanceDecline * 100).toFixed(0)}% green`}
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <div className="text-[11px] text-slate-500">S&P 500 / Nasdaq / VIX</div>
+              <div className="mt-1 text-sm text-white">
+                {spy?.value ? formatCurrency(spy.value) : "Brak danych"} • {qqq?.value ? formatCurrency(qqq.value) : "Brak danych"} • {vix?.value?.toFixed(2) || "Brak danych"}
               </div>
             </div>
-            <div className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2">
-              <div className="text-slate-500">Sektor dnia</div>
-              <div className="mt-1 text-white">{marketNow.sectorOfTheDay}</div>
-            </div>
-            <div className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2">
-              <div className="text-slate-500">Przepływ kapitału</div>
-              <div className={`mt-1 ${marketNow.capitalFlow !== null && marketNow.capitalFlow >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {marketNow.capitalFlow === null ? "Brak danych" : `${marketNow.capitalFlow >= 0 ? "+" : ""}${marketNow.capitalFlow.toFixed(2)} pkt`}
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <div className="text-[11px] text-slate-500">Breadth / Fear & Greed</div>
+              <div className="mt-1 text-sm text-white">
+                {marketNow.advanceDecline === null ? "Brak breadth" : `${(marketNow.advanceDecline * 100).toFixed(0)}% green`} • {marketNow.fearGreed === null ? "Brak F&G" : `${marketNow.fearGreed.toFixed(0)}/100`}
               </div>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <div className="text-[11px] text-slate-500">Co robić teraz?</div>
+              <div className="mt-1 text-sm text-white">{marketDecision.action}</div>
             </div>
           </div>
         </div>
@@ -840,8 +492,9 @@ export default function Dashboard() {
           {mobileAccordion.summary && (
             <div className="grid grid-cols-2 gap-2 border-t border-slate-800 p-3">
               <div className="rounded-md bg-slate-950/60 p-3">
-                <div className="text-[11px] text-slate-500">Sentyment</div>
-                <div className="mt-1 text-sm font-medium text-white">{marketSentiment.toUpperCase()}</div>
+                <div className="text-[11px] text-slate-500">AI Market Status</div>
+                <div className="mt-1 text-sm font-medium text-white">{marketDecision.status}</div>
+                <div className="mt-1 text-[11px] text-slate-600">{marketDecision.score}/100</div>
               </div>
               <div className="rounded-md bg-slate-950/60 p-3">
                 <div className="text-[11px] text-slate-500">Fear & Greed</div>
@@ -998,7 +651,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr,1fr]">
+      <div className="hidden xl:grid xl:grid-cols-[1.6fr,1fr] xl:gap-4">
         <div className="space-y-4">
           <div className="card p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -1129,122 +782,97 @@ export default function Dashboard() {
                 Pełne portfolio →
               </button>
             </div>
-
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full min-w-[980px]">
-                <thead>
-                  <tr className="border-b border-slate-800 text-[11px] uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-2 text-left font-medium">Spółka</th>
-                    <th className="px-3 py-2 text-right font-medium">Cena</th>
-                    <th className="px-3 py-2 text-right font-medium">P&L</th>
-                    <th className="px-3 py-2 text-right font-medium">AI Score</th>
-                    <th className="px-3 py-2 text-left font-medium">Rekomendacja</th>
-                    <th className="px-3 py-2 text-left font-medium">Ryzyko</th>
-                    <th className="px-3 py-2 text-left font-medium">Wyniki</th>
-                    <th className="px-3 py-2 text-right font-medium">Stop loss</th>
-                    <th className="px-3 py-2 text-right font-medium">Take profit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {portfolio.slice(0, 8).map((item) => {
-                    const pnlPct = item.current_price ? ((item.current_price - item.purchase_price) / item.purchase_price) * 100 : 0;
-                    const riskLabel = toRiskLabel(item.ai_score, item.adx);
-                    const nextEarnings = earningsByTicker.get(item.ticker);
-                    const recommendationLabel = scoreBand(item.ai_score);
-                    return (
-                      <tr
-                        key={item.id}
-                        className="cursor-pointer border-b border-slate-800/40 transition-colors hover:bg-slate-900/70"
-                        onClick={() => {
-                          openTicker(item.ticker);
-                          setExplanation(
-                            buildExplanationFromPortfolio(
-                              item,
-                              nextEarnings,
-                              filingsByTicker.get(item.ticker) || [],
-                              alerts,
-                              strongestSector?.sector || null
-                            )
-                          );
-                        }}
-                      >
-                        <td className="px-3 py-3">
-                          <div className="text-sm font-medium text-white">{item.ticker}</div>
-                          <div className="text-[11px] text-slate-500">{item.company_name}</div>
-                        </td>
-                        <td className="px-3 py-3 text-right font-mono text-sm text-slate-200">{formatCurrency(item.current_price || item.purchase_price, item.currency)}</td>
-                        <td className="px-3 py-3 text-right">
-                          <PriceChange value={pnlPct} className="text-xs" />
-                          <TrendLabel delta={pnlPct} />
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <div className={`text-sm font-semibold ${recommendationTone(recommendationLabel)}`}>{(item.ai_score ?? 0).toFixed(0)}</div>
-                          <TrendLabel signal={recommendationLabel} />
-                          <div className="text-[10px] text-slate-600">{recommendationFromScore(item.ai_score)}</div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <RecommendationBadge label={recommendationLabel} />
-                        </td>
-                        <td className={`px-3 py-3 text-xs ${riskTone(riskLabel)}`}>{riskLabel}</td>
-                        <td className="px-3 py-3 text-xs text-slate-400">{nextEarnings ? `za ${formatDaysUntil(nextEarnings.event_date)}` : "brak daty"}</td>
-                        <td className="px-3 py-3 text-right font-mono text-xs text-slate-300">{formatCurrency(getStopLoss(item), item.currency)}</td>
-                        <td className="px-3 py-3 text-right font-mono text-xs text-slate-300">{formatCurrency(getTakeProfit(item), item.currency)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="space-y-2 lg:hidden">
+            {portfolio.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-3 py-4 text-sm text-slate-500">
+                Brak aktywnych pozycji. Dodaj spółkę do portfolio lub watchlisty, aby zbudować rekomendacje.
+              </div>
+            ) : (
+            <div className="grid gap-3 xl:grid-cols-2">
               {portfolio.slice(0, 6).map((item) => {
                 const pnlPct = item.current_price ? ((item.current_price - item.purchase_price) / item.purchase_price) * 100 : 0;
                 const nextEarnings = earningsByTicker.get(item.ticker);
                 const riskLabel = toRiskLabel(item.ai_score, item.adx);
                 const recommendationLabel = scoreBand(item.ai_score);
+                const explanationCard = buildExplanationFromPortfolio(
+                  item,
+                  nextEarnings,
+                  filingsByTicker.get(item.ticker) || [],
+                  alerts,
+                  strongestSector?.sector || null
+                );
 
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
                       openTicker(item.ticker);
-                      setExplanation(
-                        buildExplanationFromPortfolio(
-                          item,
-                          nextEarnings,
-                          filingsByTicker.get(item.ticker) || [],
-                          alerts,
-                          strongestSector?.sector || null
-                        )
-                      );
+                      setExplanation(explanationCard);
                     }}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-left"
+                    className="w-full rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-left transition-colors hover:border-slate-700"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-medium text-white">{item.ticker}</div>
+                        <div className="text-base font-semibold text-white">{item.ticker} — {explanationCard.actionLabel}</div>
                         <div className="text-[11px] text-slate-500">{item.company_name}</div>
                       </div>
                       <RecommendationBadge label={recommendationLabel} />
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4 text-xs">
                       <div className="rounded-md bg-slate-950/60 p-2">
-                        <div className="text-slate-500">Cena / P&L</div>
+                        <div className="text-slate-500">Cena</div>
                         <div className="mt-1 font-mono text-slate-200">{formatCurrency(item.current_price || item.purchase_price, item.currency)}</div>
-                        <div className="mt-1"><PriceChange value={pnlPct} className="text-xs" /></div>
-                        <div className="mt-1"><TrendLabel delta={pnlPct} /></div>
                       </div>
                       <div className="rounded-md bg-slate-950/60 p-2">
-                        <div className="text-slate-500">AI Score / Ryzyko</div>
+                        <div className="text-slate-500">AI Score</div>
                         <div className={`mt-1 font-semibold ${recommendationTone(recommendationLabel)}`}>{(item.ai_score ?? 0).toFixed(0)}</div>
+                      </div>
+                      <div className="rounded-md bg-slate-950/60 p-2">
+                        <div className="text-slate-500">Trend / Ryzyko</div>
                         <div className="mt-1"><TrendLabel signal={recommendationLabel} /></div>
                         <div className={`mt-1 ${riskTone(riskLabel)}`}>{riskLabel}</div>
                       </div>
+                      <div className="rounded-md bg-slate-950/60 p-2">
+                        <div className="text-slate-500">Stop / Take</div>
+                        <div className="mt-1 font-mono text-slate-200">{formatCurrency(getStopLoss(item), item.currency)}</div>
+                        <div className="mt-1 font-mono text-slate-400">{formatCurrency(getTakeProfit(item), item.currency)}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                      <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                        <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Powody</div>
+                        <div className="space-y-1.5">
+                          {explanationCard.reasons.slice(0, 3).map((reason) => (
+                            <div key={reason} className="flex items-start gap-2 text-sm text-slate-300">
+                              <span className="mt-0.5 text-emerald-400">✓</span>
+                              <span>{reason}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                        <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Ryzyka</div>
+                        <div className="space-y-1.5">
+                          {(explanationCard.risks || ["Brak dominującego ryzyka poza zmiennością rynku."]).slice(0, 2).map((risk) => (
+                            <div key={risk} className="flex items-start gap-2 text-sm text-slate-300">
+                              <span className="mt-0.5 text-red-400">✗</span>
+                              <span>{risk}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                      <span>Wyniki: {nextEarnings ? `za ${formatDaysUntil(nextEarnings.event_date)}` : "brak daty"}</span>
+                      <span>P&L: <PriceChange value={pnlPct} className="inline text-xs" /></span>
                     </div>
                   </button>
                 );
               })}
             </div>
+            )}
           </div>
 
           <DashboardOpportunities
@@ -1263,24 +891,6 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-4">
-          <DashboardExplanation explanation={explanation} onOpenTicker={openTicker} />
-
-          <DashboardEventsCalendar
-            events={events}
-            earnings={earnings}
-            onOpenTicker={openTicker}
-            onOpenMarket={() => setActiveView("market")}
-          />
-
-          <DashboardSnapshot
-            secFilings={secFilings}
-            onOpenSec={() => setActiveView("sec")}
-            onOpenEarnings={() => setActiveView("earnings")}
-            onOpenTicker={openTicker}
-          />
-
-          <DashboardPerformance performance={performance} />
-
           <div className="card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
@@ -1291,7 +901,7 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="space-y-2">
-              {alerts.slice(0, 6).map((alert) => (
+              {alerts.length > 0 ? alerts.slice(0, 6).map((alert) => (
                 <div key={alert.id} className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
                   <div className="flex items-start gap-2">
                     <AlertCircle
@@ -1308,10 +918,31 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-              ))}
-              {alerts.length === 0 && <div className="text-sm text-slate-600">Brak aktywnych alertów.</div>}
+              )) : (
+                <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-3 py-4 text-sm text-slate-500">
+                  Brak aktywnych sygnałów. Uruchom analizę lub rozszerz watchlistę.
+                </div>
+              )}
             </div>
           </div>
+
+          <DashboardExplanation explanation={explanation} onOpenTicker={openTicker} />
+
+          <DashboardSnapshot
+            secFilings={secFilings}
+            onOpenSec={() => setActiveView("sec")}
+            onOpenEarnings={() => setActiveView("earnings")}
+            onOpenTicker={openTicker}
+          />
+
+          <DashboardPerformance performance={performance} />
+
+          <DashboardEventsCalendar
+            events={events}
+            earnings={earnings}
+            onOpenTicker={openTicker}
+            onOpenMarket={() => setActiveView("market")}
+          />
         </div>
       </div>
 
@@ -1335,8 +966,26 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="text-[11px] text-slate-500">{new Date(report.created_at).toLocaleString("pl-PL")} • {report.report_type}</div>
-          <div className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-300">
-            {report.content.slice(0, 1000)}{report.content.length > 1000 ? "..." : ""}
+          <div className="mt-4 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">Skrót decyzyjny</div>
+              <div className="mt-2 text-sm text-white">Decyzja: {reportDecisionSummary.decision}</div>
+              <div className="mt-2 text-sm text-slate-300">Pewność: {reportDecisionSummary.certainty}%</div>
+              <div className="mt-3 text-xs text-slate-500">Największe ryzyko</div>
+              <div className="mt-1 text-sm text-slate-300">{reportDecisionSummary.biggestRisk}</div>
+              <div className="mt-3 text-xs text-slate-500">Największa szansa</div>
+              <div className="mt-1 text-sm text-slate-300">{reportDecisionSummary.biggestChance}</div>
+            </div>
+            <div className="space-y-3">
+              {(reportSections.length > 0 ? reportSections : [{ title: "Raport AI", body: report.content }]).map((section) => (
+                <div key={section.title} className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">{section.title}</div>
+                  <div className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-300">
+                    {section.body.slice(0, 360)}{section.body.length > 360 ? "..." : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

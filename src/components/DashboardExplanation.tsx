@@ -8,9 +8,14 @@ export interface DashboardExplanationData {
   companyName: string;
   aiScore: number;
   recommendation: string;
+  actionLabel?: string;
   probability: number;
   riskLabel: string;
   reasons: string[];
+  risks?: string[];
+  technicalReasons?: string[];
+  fundamentalReasons?: string[];
+  changeTriggers?: string[];
   marketContext: string[];
 }
 
@@ -36,7 +41,7 @@ export default function DashboardExplanation({ explanation, onOpenTicker }: Dash
           <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-white">{explanation.ticker}</div>
+                <div className="text-sm font-semibold text-white">{explanation.ticker} — {explanation.actionLabel || explanation.recommendation}</div>
                 <div className="text-[11px] text-slate-500">{explanation.companyName}</div>
               </div>
               <button onClick={() => onOpenTicker(explanation.ticker)} className="text-xs text-blue-400 hover:text-blue-300">
@@ -60,7 +65,7 @@ export default function DashboardExplanation({ explanation, onOpenTicker }: Dash
           </div>
 
           <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
-            <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Powody</div>
+            <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Dlaczego</div>
             <div className="space-y-2">
               {explanation.reasons.length > 0 ? explanation.reasons.map((reason) => (
                 <div key={reason} className="flex items-start gap-2 text-sm text-slate-300">
@@ -73,6 +78,43 @@ export default function DashboardExplanation({ explanation, onOpenTicker }: Dash
             </div>
           </div>
 
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+              <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Powody techniczne</div>
+              <div className="space-y-2">
+                {(explanation.technicalReasons || []).length > 0 ? (explanation.technicalReasons || []).map((reason) => (
+                  <div key={reason} className="flex items-start gap-2 text-sm text-slate-300">
+                    <span className="mt-0.5 text-emerald-400">✓</span>
+                    <span>{reason}</span>
+                  </div>
+                )) : <div className="text-sm text-slate-600">Brak wyraźnych przewag technicznych.</div>}
+              </div>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+              <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Powody fundamentalne / newsowe</div>
+              <div className="space-y-2">
+                {(explanation.fundamentalReasons || []).length > 0 ? (explanation.fundamentalReasons || []).map((reason) => (
+                  <div key={reason} className="flex items-start gap-2 text-sm text-slate-300">
+                    <span className="mt-0.5 text-emerald-400">✓</span>
+                    <span>{reason}</span>
+                  </div>
+                )) : <div className="text-sm text-slate-600">Brak silnych katalizatorów fundamentalnych.</div>}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+            <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Ryzyka</div>
+            <div className="space-y-2">
+              {(explanation.risks || []).length > 0 ? (explanation.risks || []).map((risk) => (
+                <div key={risk} className="flex items-start gap-2 text-sm text-slate-300">
+                  <span className="mt-0.5 text-red-400">✗</span>
+                  <span>{risk}</span>
+                </div>
+              )) : <div className="text-sm text-slate-600">Brak dominujących ryzyk poza standardową zmiennością rynku.</div>}
+            </div>
+          </div>
+
           <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
             <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Kontekst</div>
             <div className="space-y-2">
@@ -81,6 +123,15 @@ export default function DashboardExplanation({ explanation, onOpenTicker }: Dash
               )) : (
                 <div className="text-sm text-slate-600">Brak dodatkowego kontekstu SEC / earnings / alertów.</div>
               )}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+            <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">Zmiana rekomendacji</div>
+            <div className="space-y-2">
+              {(explanation.changeTriggers || []).length > 0 ? (explanation.changeTriggers || []).map((trigger) => (
+                <div key={trigger} className="text-sm text-slate-300">{trigger}</div>
+              )) : <div className="text-sm text-slate-600">AI nie określiło jeszcze jasnych triggerów zmiany decyzji.</div>}
             </div>
           </div>
         </div>

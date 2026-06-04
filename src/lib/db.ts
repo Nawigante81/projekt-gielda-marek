@@ -468,6 +468,12 @@ function initSchema(db: Database.Database) {
   ensureColumn(db, "news", "sentiment_label", "TEXT DEFAULT 'neutral'");
   ensureColumn(db, "news", "sentiment_score", "REAL DEFAULT 0");
   ensureColumn(db, "news", "impact_score", "REAL DEFAULT 0");
+  ensureColumn(db, "news", "clean_summary", "TEXT");
+  ensureColumn(db, "news", "impact_label", "TEXT");
+  ensureColumn(db, "news", "priority_category", "TEXT");
+  ensureColumn(db, "news", "priority_rank", "INTEGER");
+  ensureColumn(db, "news", "priority_score", "REAL");
+  ensureColumn(db, "news", "ai_summary_json", "TEXT");
   ensureColumn(db, "current_prices", "company_name", "TEXT");
   ensureColumn(db, "current_prices", "sector", "TEXT");
   ensureColumn(db, "current_prices", "industry", "TEXT");

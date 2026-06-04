@@ -129,7 +129,7 @@ export default function AppShell() {
       />
       <div className="relative min-h-screen overflow-hidden bg-slate-950">
         <div
-          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat opacity-50"
+          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat opacity-60"
           style={{
             backgroundImage: "linear-gradient(rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.86)), url('/assets/app-bg.png')",
           }}

@@ -13,18 +13,28 @@ export async function GET() {
     ]);
     return NextResponse.json({ ...data, history });
   } catch (error) {
-    console.error("market-sentiment fetch error:", error);
+    if (process.env.NODE_ENV === "development") {
+      console.warn("market-sentiment fetch degraded:", error);
+    }
     return NextResponse.json(
       {
-        error: "Nie udało się pobrać danych o sentymencie rynku",
+        error: "Nie udało się w pełni pobrać danych o sentymencie rynku",
         fearGreedScore: null,
         fearGreedLabel: null,
         fearGreedUpdatedAt: null,
         putCallRatio: null,
         putCallType: null,
+        vixValue: null,
+        vixChangePct: null,
+        breadthScore: null,
+        breadthLabel: null,
+        source: {
+          fearGreed: "unavailable",
+          putCall: "unavailable",
+        },
         history: [],
       },
-      { status: 502 }
+      { status: 200 }
     );
   }
 }

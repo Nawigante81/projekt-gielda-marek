@@ -148,6 +148,7 @@ export default function Portfolio() {
 
   const activeItems = items.filter((item) => item.status !== "sold");
   const totalValue = activeItems.reduce((s, i) => s + (i.current_price || i.purchase_price) * i.shares, 0);
+  const isEmpty = items.length === 0;
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-blue-500" size={24} /></div>;
@@ -296,6 +297,24 @@ export default function Portfolio() {
       )}
 
       {/* Table */}
+      {isEmpty ? (
+        <div className="card p-8 text-center text-slate-500">
+          <TrendingUp size={32} className="mx-auto mb-3 opacity-30" />
+          <div className="text-sm text-slate-400">Portfolio jest puste.</div>
+          <div className="mt-2 text-xs text-slate-600">Dodaj pierwszą pozycję, aby śledzić wynik, sygnały i ryzyko.</div>
+          <div className="mt-5 grid gap-2 text-left sm:grid-cols-3">
+            {[
+              "1. Dodaj ticker i liczbę akcji.",
+              "2. Ustaw walutę, status i próg alertu.",
+              "3. Po zapisaniu otwórz analizę spółki i obserwuj P&L.",
+            ].map((step) => (
+              <div key={step} className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-3 text-xs text-slate-500">
+                {step}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
       <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
@@ -391,17 +410,10 @@ export default function Portfolio() {
                 </tr>
               );
             })}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-slate-600">
-                  <TrendingUp size={32} className="mx-auto mb-2 opacity-30" />
-                  <div className="text-sm">Portfolio jest puste. Dodaj pierwszą pozycję.</div>
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

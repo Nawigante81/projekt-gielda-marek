@@ -97,6 +97,7 @@ async function main(): Promise<void> {
     "analysis_history",
     "recommendations",
     "performance_tracking",
+    "market_sentiment_history",
   ];
 
   console.log("");

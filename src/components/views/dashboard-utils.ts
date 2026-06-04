@@ -119,3 +119,76 @@ export function getEventImpactTone(event: { impact?: string | null; event_type?:
   }
   return "border-slate-800 bg-slate-900/60 text-slate-300";
 }
+
+export function toActionLabel(score: number | null | undefined): "BUY" | "HOLD" | "REDUCE" | "SELL" {
+  const value = score ?? 0;
+  if (value >= 75) return "BUY";
+  if (value >= 55) return "HOLD";
+  if (value >= 35) return "REDUCE";
+  return "SELL";
+}
+
+export function toSetupType(score: number | null | undefined, changePct: number | null | undefined): "LONG" | "SHORT" | "WATCH" {
+  const value = score ?? 0;
+  const momentum = changePct ?? 0;
+  if (value >= 70 && momentum >= -2) return "LONG";
+  if (value <= 35 || momentum <= -3) return "SHORT";
+  return "WATCH";
+}
+
+export function toMomentumLabel(changePct: number | null | undefined): string {
+  if (changePct === null || changePct === undefined || !Number.isFinite(changePct)) return "Brak danych";
+  if (changePct >= 3) return "silne";
+  if (changePct >= 1) return "rosnące";
+  if (changePct <= -3) return "słabe";
+  if (changePct <= -1) return "spadające";
+  return "mieszane";
+}
+
+export function toMarketStatusLabel(params: {
+  spyChangePct: number | null | undefined;
+  vixValue: number | null | undefined;
+  fearGreed: number | null | undefined;
+  breadth: number | null | undefined;
+}): "BULLISH" | "NEUTRAL" | "BEARISH" | "RISK-OFF" {
+  const spy = params.spyChangePct ?? null;
+  const vix = params.vixValue ?? null;
+  const fearGreed = params.fearGreed ?? null;
+  const breadth = params.breadth ?? null;
+
+  if ((vix !== null && vix >= 24) || (breadth !== null && breadth < 0.38)) return "RISK-OFF";
+  if ((spy !== null && spy <= -1.2) || (fearGreed !== null && fearGreed <= 35)) return "BEARISH";
+  if ((spy !== null && spy >= 0.8) && (breadth === null || breadth >= 0.55) && (vix === null || vix < 20)) return "BULLISH";
+  return "NEUTRAL";
+}
+
+export function buildReportSections(content: string): Array<{ title: string; body: string }> {
+  const normalized = (content || "").trim();
+  if (!normalized) return [];
+
+  const sectionLabels = [
+    "Sytuacja rynkowa",
+    "Sentyment",
+    "Portfolio",
+    "Watchlista",
+    "Kluczowe alerty techniczne",
+    "SEC / earnings",
+    "Decyzja końcowa",
+  ];
+
+  const pattern = new RegExp(`(?:^|\\n)(?:#+\\s*)?(${sectionLabels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\s*:?\\s*`, "gi");
+  const matches = Array.from(normalized.matchAll(pattern));
+
+  if (matches.length === 0) {
+    return [{ title: "Raport AI", body: normalized }];
+  }
+
+  return matches.map((match, index) => {
+    const start = (match.index || 0) + match[0].length;
+    const end = index + 1 < matches.length ? (matches[index + 1].index || normalized.length) : normalized.length;
+    return {
+      title: match[1],
+      body: normalized.slice(start, end).trim(),
+    };
+  }).filter((section) => section.body.length > 0);
+}

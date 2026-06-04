@@ -302,6 +302,24 @@ export default function Watchlist() {
         </div>
       </div>
 
+      {items.length === 0 && (
+        <div className="card p-4">
+          <div className="text-sm font-medium text-white">Szybki start watchlisty</div>
+          <div className="mt-1 text-xs text-slate-500">Zacznij od prostego workflow, a potem rozszerzaj grupy i typy okazji.</div>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            {[
+              "1. Dodaj 5-10 tickerów do pierwszej grupy, na przykład TECH albo ETF.",
+              "2. Wybierz typ obserwacji: okazja, wysoki wolumen albo po wynikach.",
+              "3. Włącz auto analizę dla grup, które mają trafiać do skanera i alertów.",
+            ].map((step) => (
+              <div key={step} className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-3 text-xs text-slate-500">
+                {step}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="card overflow-hidden hidden md:block">
         <table className="w-full">
           <thead>
@@ -404,11 +422,11 @@ export default function Watchlist() {
                 </td>
               </tr>
             ))}
-            {filteredItems.length === 0 && (
+            {filteredItems.length === 0 && items.length > 0 && (
               <tr>
                 <td colSpan={11} className="px-4 py-12 text-center text-slate-600">
                   <Eye size={32} className="mx-auto mb-2 opacity-30" />
-                  <div className="text-sm">Watchlista jest pusta. Dodaj pierwsze tickery do obserwacji.</div>
+                  <div className="text-sm">Brak tickerów dla bieżących filtrów.</div>
                 </td>
               </tr>
             )}
@@ -473,7 +491,7 @@ export default function Watchlist() {
         {filteredItems.length === 0 && (
           <div className="card p-6 text-center text-slate-600">
             <Eye size={28} className="mx-auto mb-2 opacity-30" />
-            <div className="text-sm">Watchlista jest pusta. Dodaj pierwsze tickery do obserwacji.</div>
+            <div className="text-sm">{items.length === 0 ? "Watchlista jest pusta. Dodaj pierwsze tickery do obserwacji." : "Brak tickerów dla bieżących filtrów."}</div>
           </div>
         )}
       </div>

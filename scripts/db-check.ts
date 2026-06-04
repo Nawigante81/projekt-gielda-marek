@@ -14,6 +14,11 @@ type MigrationRow = {
   name: string;
 };
 
+type AdminRow = {
+  id: number;
+  username: string;
+};
+
 async function getMigrationFiles(): Promise<string[]> {
   const migrationsDir = path.resolve(process.cwd(), "migrations", "postgres");
   const entries = await fs.readdir(migrationsDir, { withFileTypes: true });
@@ -99,6 +104,16 @@ async function main(): Promise<void> {
   for (const tableName of tableNames) {
     const count = await getTableCount(tableName);
     console.log(`- ${tableName}: ${count === null ? "missing" : count}`);
+  }
+
+  const usersExists = await tableExists("users");
+  if (usersExists) {
+    const { rows } = await getPostgresPool().query<AdminRow>(
+      "SELECT id, username FROM users WHERE username = $1 LIMIT 1",
+      ["pytomek@o2.pl"]
+    );
+    console.log("");
+    console.log(`Default admin: ${rows[0] ? "present" : "missing"}`);
   }
 
   if (pendingMigrations.length > 0) {

@@ -95,10 +95,13 @@ export async function fetchPrice(ticker: string): Promise<PriceData | null> {
   if (data) {
     const averageVolume = await queryRow<{ avgVolume: number | null }>(`
       SELECT AVG(volume) as avgVolume
-      FROM price_history
-      WHERE ticker = ? AND volume IS NOT NULL
-      ORDER BY date DESC
-      LIMIT 20
+      FROM (
+        SELECT volume
+        FROM price_history
+        WHERE ticker = ? AND volume IS NOT NULL
+        ORDER BY date DESC
+        LIMIT 20
+      ) latest_volume
     `, [ticker]);
 
     await upsertCurrentPrice({

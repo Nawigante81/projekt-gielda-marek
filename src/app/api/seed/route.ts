@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
+import { runSql } from "@/lib/postgres-access";
 
 export async function POST() {
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Seed not available in production" }, { status: 403 });
   }
 
-  const db = getDb();
-
   // Reset admin password to 'admin123'
   const hash = hashPassword("admin123");
-  db.prepare("INSERT OR REPLACE INTO users (username, password_hash) VALUES (?, ?)").run("pytomek@o2.pl", hash);
+  await runSql(`
+    INSERT INTO users (username, password_hash, updated_at)
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, updated_at = datetime('now')
+  `, ["pytomek@o2.pl", hash]);
 
   // Seed portfolio
   const portfolioItems = [
@@ -21,14 +23,13 @@ export async function POST() {
     { ticker: "MSFT", company_name: "Microsoft Corporation", shares: 8, purchase_price: 380.00, purchase_date: "2024-01-20" },
   ];
 
-  db.prepare("DELETE FROM portfolio").run();
-  const insertPortfolio = db.prepare(`
-    INSERT INTO portfolio (ticker, company_name, shares, purchase_price, purchase_date, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
+  await runSql("DELETE FROM portfolio");
 
   for (const item of portfolioItems) {
-    insertPortfolio.run(item.ticker, item.company_name, item.shares, item.purchase_price, item.purchase_date, "");
+    await runSql(`
+      INSERT INTO portfolio (ticker, company_name, shares, purchase_price, purchase_date, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [item.ticker, item.company_name, item.shares, item.purchase_price, item.purchase_date, ""]);
   }
 
   // Seed watchlist
@@ -40,14 +41,17 @@ export async function POST() {
     { ticker: "GOOGL", company_name: "Alphabet Inc." },
   ];
 
-  db.prepare("DELETE FROM watchlist").run();
-  const insertWatchlist = db.prepare("INSERT OR IGNORE INTO watchlist (ticker, company_name) VALUES (?, ?)");
+  await runSql("DELETE FROM watchlist");
   for (const item of watchlistItems) {
-    insertWatchlist.run(item.ticker, item.company_name);
+    await runSql(`
+      INSERT INTO watchlist (ticker, company_name)
+      VALUES (?, ?)
+      ON CONFLICT(ticker) DO NOTHING
+    `, [item.ticker, item.company_name]);
   }
 
   // Seed some example alerts
-  db.prepare("DELETE FROM alerts").run();
+  await runSql("DELETE FROM alerts");
   const alertItems = [
     { ticker: "NVDA", type: "rsi_overbought", severity: "warning", message: "NVDA: RSI 72.3 przekroczył 70 (wykupienie)", value: 72.3 },
     { ticker: "AMD", type: "macd_bullish", severity: "info", message: "AMD: Sygnał MACD bullish", value: 0.45 },
@@ -55,19 +59,18 @@ export async function POST() {
     { ticker: "PLTR", type: "adx_strong_trend", severity: "info", message: "PLTR: ADX 28.5 - silny trend", value: 28.5 },
   ];
 
-  const insertAlert = db.prepare(`
-    INSERT INTO alerts (ticker, alert_type, severity, message, value)
-    VALUES (?, ?, ?, ?, ?)
-  `);
   for (const alert of alertItems) {
-    insertAlert.run(alert.ticker, alert.type, alert.severity, alert.message, alert.value);
+    await runSql(`
+      INSERT INTO alerts (ticker, alert_type, severity, message, value)
+      VALUES (?, ?, ?, ?, ?)
+    `, [alert.ticker, alert.type, alert.severity, alert.message, alert.value]);
   }
 
   // Seed example AI report
-  db.prepare("DELETE FROM ai_reports").run();
-  db.prepare(`
+  await runSql("DELETE FROM ai_reports");
+  await runSql(`
     INSERT INTO ai_reports (report_type, content, market_sentiment) VALUES (?, ?, ?)
-  `).run("seed", `## Raport Analizy Technicznej
+  `, ["seed", `## Raport Analizy Technicznej
 *Przykładowy raport wygenerowany przy seed danych*
 
 ### Sytuacja Rynkowa
@@ -96,7 +99,7 @@ S&P 500 w trendzie bocznym, QQQ wykazuje relative strength. Brak wyraźnych sygn
 Sesja neutralna. Portfolio zachowuje się stabilnie. Uwaga na NVDA - RSI bliski wykupienia, można rozważyć monitorowanie poziomu 75+.
 
 ---
-*Nie stanowi porady inwestycyjnej.*`, "neutral");
+*Nie stanowi porady inwestycyjnej.*`, "neutral"]);
 
   return NextResponse.json({ success: true, message: "Dane seed załadowane. Login: pytomek@o2.pl / admin123" });
 }

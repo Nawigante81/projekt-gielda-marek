@@ -242,12 +242,13 @@ export async function GET() {
 
   await refreshEventsIfNeeded();
 
+  const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const events = await queryRows(`
     SELECT * FROM market_events
-    WHERE event_date >= datetime('now', '-1 day')
+    WHERE event_date >= ?
     ORDER BY event_date ASC, event_type ASC
     LIMIT 250
-  `);
+  `, [cutoffDate]);
 
   return NextResponse.json({
     buckets: bucketize(events as Array<Record<string, unknown>>),

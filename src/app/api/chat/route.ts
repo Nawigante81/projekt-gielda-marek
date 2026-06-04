@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb, getSetting } from "@/lib/db";
+import { getSettingValue, queryRow, queryRows, runSql } from "@/lib/postgres-access";
 
 function extractTickers(question: string): string[] {
   const stopwords = new Set(["AI", "US", "ETF"]);
   return [...new Set((question.toUpperCase().match(/\b[A-Z]{1,5}\b/g) || []).filter((token) => token.length >= 2 && !stopwords.has(token)))];
 }
 
-function fetchTopContext(db: ReturnType<typeof getDb>): Array<Record<string, unknown>> {
-  return db.prepare(`
+async function fetchTopContext(): Promise<Array<Record<string, unknown>>> {
+  return queryRows(`
     SELECT s.ticker,
       COALESCE(s.company_name, s.ticker) as company_name,
       cp.price,
@@ -31,7 +31,7 @@ function fetchTopContext(db: ReturnType<typeof getDb>): Array<Record<string, unk
     WHERE ti.ai_score IS NOT NULL
     ORDER BY ti.ai_score DESC
     LIMIT 5
-  `).all() as Array<Record<string, unknown>>;
+  `);
 }
 
 function buildDeterministicAnswer(question: string, contexts: Array<Record<string, unknown>>): string {
@@ -64,10 +64,9 @@ export async function POST(req: NextRequest) {
   }
 
   const tickers = extractTickers(question);
-  const db = getDb();
 
   const rawContexts = tickers.length > 0
-    ? tickers.map((ticker) => db.prepare(`
+    ? await Promise.all(tickers.map((ticker) => queryRow(`
         SELECT s.ticker,
           COALESCE(s.company_name, s.ticker) as company_name,
           cp.price,
@@ -88,24 +87,25 @@ export async function POST(req: NextRequest) {
           SELECT id FROM sentiment WHERE ticker = s.ticker ORDER BY created_at DESC, id DESC LIMIT 1
         )
         WHERE s.ticker = ?
-      `).get(ticker))
-    : fetchTopContext(db);
+      `, [ticker])))
+    : await fetchTopContext();
 
   const contexts = rawContexts.filter(Boolean) as Array<Record<string, unknown>>;
 
   let validContexts = contexts.filter((item) => item.price !== null || item.ai_score !== null);
   if (validContexts.length === 0) {
-    validContexts = fetchTopContext(db).filter((item) => item.price !== null || item.ai_score !== null);
+    validContexts = (await fetchTopContext()).filter((item) => item.price !== null || item.ai_score !== null);
   }
   if (validContexts.length === 0) {
     return NextResponse.json({ error: "Brak danych do odpowiedzi. Uruchom analizę dla wybranych spółek." }, { status: 400 });
   }
 
   let answer = buildDeterministicAnswer(question, validContexts);
-  const openaiKey = process.env.OPENAI_API_KEY || getSetting("openai_api_key");
+  const openaiKey = process.env.OPENAI_API_KEY || (await getSettingValue("openai_api_key"));
   if (openaiKey) {
     try {
-      const response = await fetch(`${process.env.OPENAI_BASE_URL || getSetting("openai_base_url") || "https://api.openai.com/v1"}/chat/completions`, {
+      const openaiBaseUrl = process.env.OPENAI_BASE_URL || (await getSettingValue("openai_base_url")) || "https://api.openai.com/v1";
+      const response = await fetch(`${openaiBaseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -138,10 +138,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  db.prepare(`
+  await runSql(`
     INSERT INTO ai_chat_logs (user_id, question, answer, context_json)
     VALUES (?, ?, ?, ?)
-  `).run(session.userId, question, answer, JSON.stringify(validContexts));
+  `, [session.userId, question, answer, JSON.stringify(validContexts)]);
 
   return NextResponse.json({ answer, contexts: validContexts });
 }

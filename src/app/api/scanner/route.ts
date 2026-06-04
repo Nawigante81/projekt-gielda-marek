@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRow, queryRows } from "@/lib/postgres-access";
 
 interface ScanResult {
   ticker: string;
@@ -19,11 +19,8 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = getDb();
-
-  // Get all tickers from portfolio and watchlist
-  const portfolio = db.prepare("SELECT ticker, company_name FROM portfolio").all() as Array<{ ticker: string; company_name: string }>;
-  const watchlist = db.prepare("SELECT ticker, company_name FROM watchlist").all() as Array<{ ticker: string; company_name: string }>;
+  const portfolio = await queryRows<{ ticker: string; company_name: string }>("SELECT ticker, company_name FROM portfolio");
+  const watchlist = await queryRows<{ ticker: string; company_name: string }>("SELECT ticker, company_name FROM watchlist");
 
   const allTickers = [
     ...portfolio.map(p => ({ ticker: p.ticker, company_name: p.company_name })),
@@ -34,13 +31,13 @@ export async function GET() {
 
   for (const item of allTickers) {
     const ticker = item.ticker;
-    const price = db.prepare("SELECT * FROM current_prices WHERE ticker = ?").get(ticker) as {
+    const price = await queryRow<{
       price: number;
       change_pct: number;
       volume: number;
       avg_volume: number | null;
-    } | undefined;
-    const tech = db.prepare("SELECT * FROM technical_indicators WHERE ticker = ? ORDER BY calculated_at DESC LIMIT 1").get(ticker) as {
+    }>("SELECT * FROM current_prices WHERE ticker = ?", [ticker]);
+    const tech = await queryRow<{
       rsi_14: number | null;
       macd_histogram: number | null;
       adx: number | null;
@@ -53,7 +50,7 @@ export async function GET() {
       signal_macd: string | null;
       signal_rsi: string | null;
       signal_adx: string | null;
-    } | undefined;
+    }>("SELECT * FROM technical_indicators WHERE ticker = ? ORDER BY calculated_at DESC LIMIT 1", [ticker]);
 
     if (!price || !tech) continue;
 

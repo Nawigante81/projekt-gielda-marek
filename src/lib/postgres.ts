@@ -1,6 +1,12 @@
-import { Pool } from "pg";
+import { Pool, types } from "pg";
 
 let pool: Pool | null = null;
+
+const POSTGRES_NUMERIC_OID = 1700;
+const POSTGRES_INT8_OID = 20;
+
+types.setTypeParser(POSTGRES_NUMERIC_OID, (value) => Number(value));
+types.setTypeParser(POSTGRES_INT8_OID, (value) => Number(value));
 
 export function getPostgresPool(): Pool {
   if (!pool) {
@@ -29,4 +35,3 @@ export async function pingPostgres(): Promise<boolean> {
     client.release();
   }
 }
-

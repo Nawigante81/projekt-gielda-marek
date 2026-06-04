@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
 import { MARKET_UNIVERSE } from "@/lib/market-universe";
+import { queryRow } from "@/lib/postgres-access";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -9,16 +9,15 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const index = (searchParams.get("index") || "SP500").toUpperCase();
-  const db = getDb();
 
-  const tiles = MARKET_UNIVERSE.filter((entry) => entry.indices.includes(index as "SP500" | "NASDAQ" | "DOW"))
-    .map((entry) => {
-      const price = db.prepare(`
+  const tiles = await Promise.all(MARKET_UNIVERSE.filter((entry) => entry.indices.includes(index as "SP500" | "NASDAQ" | "DOW"))
+    .map(async (entry) => {
+      const price = await queryRow<{ price: number | null; change_pct: number | null }>(`
         SELECT price, change_pct FROM current_prices WHERE ticker = ?
-      `).get(entry.ticker) as { price: number | null; change_pct: number | null } | undefined;
-      const tech = db.prepare(`
+      `, [entry.ticker]);
+      const tech = await queryRow<{ ai_score: number | null; recommendation: string | null }>(`
         SELECT ai_score, recommendation FROM technical_indicators WHERE ticker = ? ORDER BY calculated_at DESC, id DESC LIMIT 1
-      `).get(entry.ticker) as { ai_score: number | null; recommendation: string | null } | undefined;
+      `, [entry.ticker]);
       return {
         ticker: entry.ticker,
         company_name: entry.company_name,
@@ -29,9 +28,11 @@ export async function GET(req: NextRequest) {
         ai_score: tech?.ai_score || 0,
         recommendation: tech?.recommendation || "Hold",
       };
-    })
+    }));
+
+  const visibleTiles = tiles
     .filter((tile) => tile.price !== null)
     .sort((a, b) => b.market_cap - a.market_cap);
 
-  return NextResponse.json({ index, tiles });
+  return NextResponse.json({ index, tiles: visibleTiles });
 }

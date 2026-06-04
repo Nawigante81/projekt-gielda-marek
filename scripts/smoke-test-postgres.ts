@@ -104,6 +104,7 @@ async function main(): Promise<void> {
     { name: "reports", path: "/api/reports" },
     { name: "performance", path: "/api/performance" },
     { name: "sectors", path: "/api/sectors" },
+    { name: "market-events", path: "/api/market-events" },
   ];
 
   for (const endpoint of protectedEndpoints) {

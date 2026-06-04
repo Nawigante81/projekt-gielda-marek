@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRows, queryRow, runSql } from "@/lib/postgres-access";
 
 function validateTicker(ticker: string): boolean {
   return /^[A-Z0-9.\-\^]{1,10}$/.test(ticker.toUpperCase());
@@ -10,8 +10,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = getDb();
-  const watchlist = db.prepare(`
+  const watchlist = await queryRows(`
     SELECT w.*,
       wl.name as watchlist_name,
       wl.color as watchlist_color,
@@ -59,7 +58,7 @@ export async function GET() {
       SELECT id FROM sentiment WHERE ticker = w.ticker ORDER BY created_at DESC, id DESC LIMIT 1
     )
     ORDER BY w.created_at ASC
-  `).all();
+  `);
 
   return NextResponse.json(watchlist);
 }
@@ -75,26 +74,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Nieprawidłowy ticker" }, { status: 400 });
   }
 
-  const db = getDb();
   try {
     let resolvedWatchlistId = watchlist_id || null;
     if (!resolvedWatchlistId && group_name) {
-      const watchlistRow = db.prepare("SELECT id FROM watchlists WHERE upper(name) = upper(?)").get(group_name) as { id: number } | undefined;
+      const watchlistRow = await queryRow<{ id: number }>("SELECT id FROM watchlists WHERE upper(name) = upper(?) LIMIT 1", [group_name]);
       resolvedWatchlistId = watchlistRow?.id || null;
     }
 
-    const result = db.prepare(`
+    const result = await runSql(`
       INSERT INTO watchlist (ticker, company_name, notes, group_name, watchlist_id, auto_analyze, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(
+    `, [
       ticker.toUpperCase(),
       company_name || "",
       notes || "",
       (group_name || "TECH").toUpperCase(),
       resolvedWatchlistId,
       auto_analyze === false ? 0 : 1
-    ) as { lastInsertRowid: number };
-    return NextResponse.json({ id: result.lastInsertRowid, success: true });
+    ]);
+    return NextResponse.json({ id: result.lastInsertId ?? null, success: true });
   } catch {
     return NextResponse.json({ error: "Ticker już istnieje na watchliście" }, { status: 409 });
   }

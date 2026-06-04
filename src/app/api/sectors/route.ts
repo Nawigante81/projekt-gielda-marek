@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
 import { MARKET_UNIVERSE } from "@/lib/market-universe";
+import { queryRow, queryRows } from "@/lib/postgres-access";
 
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = getDb();
-  const latestDateRow = db.prepare("SELECT MAX(analysis_date) as analysis_date FROM sector_analysis").get() as { analysis_date: string | null };
+  const latestDateRow = await queryRow<{ analysis_date: string | null }>(
+    "SELECT MAX(analysis_date) as analysis_date FROM sector_analysis"
+  );
 
   let rows = latestDateRow?.analysis_date
-    ? db.prepare("SELECT * FROM sector_analysis WHERE analysis_date = ? ORDER BY avg_change_pct DESC").all(latestDateRow.analysis_date)
+    ? await queryRows("SELECT * FROM sector_analysis WHERE analysis_date = ? ORDER BY avg_change_pct DESC", [latestDateRow.analysis_date])
     : [];
 
   if (rows.length === 0) {

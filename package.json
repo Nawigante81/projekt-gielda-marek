@@ -15,7 +15,12 @@
     "start": "next start",
     "start:desktop": "cross-env ELECTRON_LOCAL_BUILD=1 electron .",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node scripts/prepare-next-types.cjs && tsc --noEmit",
+    "db:check": "tsx scripts/db-check.ts",
+    "migrate:postgres": "tsx scripts/migrate-postgres.ts",
+    "setup:postgres": "tsx scripts/setup-postgres.ts",
+    "import:sqlite-to-postgres": "tsx scripts/import-sqlite-to-postgres.ts",
+    "smoke-test:postgres": "tsx scripts/smoke-test-postgres.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",

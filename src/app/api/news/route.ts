@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRows } from "@/lib/postgres-access";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -9,14 +9,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const ticker = searchParams.get("ticker");
 
-  const db = getDb();
   const query = ticker
     ? "SELECT * FROM news WHERE ticker = ? ORDER BY published_at DESC LIMIT 20"
     : "SELECT * FROM news ORDER BY published_at DESC LIMIT 50";
 
   const news = ticker
-    ? db.prepare(query).all(ticker)
-    : db.prepare(query).all();
+    ? await queryRows(query, [ticker])
+    : await queryRows(query);
 
   return NextResponse.json(news);
 }

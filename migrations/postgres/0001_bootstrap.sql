@@ -36,7 +36,11 @@ CREATE TABLE IF NOT EXISTS watchlist (
   ticker TEXT UNIQUE NOT NULL,
   company_name TEXT,
   notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  watchlist_id BIGINT,
+  group_name TEXT DEFAULT 'TECH',
+  auto_analyze INTEGER DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS watchlists (
@@ -97,11 +101,15 @@ CREATE TABLE IF NOT EXISTS stock_prices (
 CREATE TABLE IF NOT EXISTS current_prices (
   id BIGSERIAL PRIMARY KEY,
   ticker TEXT UNIQUE NOT NULL,
+  company_name TEXT,
+  sector TEXT,
+  industry TEXT,
   price NUMERIC,
   change_pct NUMERIC,
   change_abs NUMERIC,
   volume BIGINT,
   market_cap NUMERIC,
+  beta NUMERIC,
   pe_ratio NUMERIC,
   high_52w NUMERIC,
   low_52w NUMERIC,
@@ -153,7 +161,19 @@ CREATE TABLE IF NOT EXISTS technical_indicators (
   signal_ichimoku TEXT DEFAULT 'neutral',
   signal_fib TEXT DEFAULT 'neutral',
   overall_signal TEXT DEFAULT 'neutral',
-  overall_score NUMERIC DEFAULT 0
+  overall_score NUMERIC DEFAULT 0,
+  ai_score NUMERIC DEFAULT 0,
+  recommendation TEXT DEFAULT 'Hold',
+  trend_score NUMERIC DEFAULT 0,
+  rsi_score NUMERIC DEFAULT 0,
+  macd_score NUMERIC DEFAULT 0,
+  volume_score NUMERIC DEFAULT 0,
+  sma_score NUMERIC DEFAULT 0,
+  ema_score NUMERIC DEFAULT 0,
+  bb_score NUMERIC DEFAULT 0,
+  adx_score NUMERIC DEFAULT 0,
+  sentiment_score NUMERIC DEFAULT 0,
+  UNIQUE(ticker)
 );
 
 CREATE TABLE IF NOT EXISTS market_indices (
@@ -189,6 +209,9 @@ CREATE TABLE IF NOT EXISTS alerts (
   value NUMERIC,
   threshold NUMERIC,
   is_read INTEGER DEFAULT 0,
+  is_enabled INTEGER DEFAULT 1,
+  rule_key TEXT,
+  metadata_json TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -200,6 +223,9 @@ CREATE TABLE IF NOT EXISTS news (
   source TEXT,
   url TEXT,
   sentiment TEXT DEFAULT 'neutral',
+  sentiment_label TEXT DEFAULT 'neutral',
+  sentiment_score NUMERIC DEFAULT 0,
+  impact_score NUMERIC DEFAULT 0,
   published_at TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -351,4 +377,3 @@ CREATE INDEX IF NOT EXISTS idx_analysis_history_created_at ON analysis_history(c
 CREATE INDEX IF NOT EXISTS idx_recommendations_ticker ON recommendations(ticker);
 CREATE INDEX IF NOT EXISTS idx_market_events_date ON market_events(event_date);
 CREATE INDEX IF NOT EXISTS idx_sentiment_ticker ON sentiment(ticker);
-

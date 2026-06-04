@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRows, runSql } from "@/lib/postgres-access";
 
 function validateTicker(ticker: string): boolean {
   return /^[A-Z0-9.\-\^]{1,10}$/.test(ticker.toUpperCase());
@@ -10,8 +10,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = getDb();
-  const portfolio = db.prepare(`
+  const portfolio = await queryRows(`
     SELECT p.*, 
       cp.price as current_price,
       cp.change_pct,
@@ -55,7 +54,7 @@ export async function GET() {
       SELECT id FROM sentiment WHERE ticker = p.ticker ORDER BY created_at DESC, id DESC LIMIT 1
     )
     ORDER BY p.created_at ASC
-  `).all();
+  `);
 
   return NextResponse.json(portfolio);
 }
@@ -77,18 +76,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Nieprawidłowa cena zakupu" }, { status: 400 });
   }
 
-  const db = getDb();
-  const result = db.prepare(`
+  const result = await runSql(`
     INSERT INTO portfolio (ticker, company_name, shares, purchase_price, purchase_date, notes)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
+    ${process.env.DATABASE_PROVIDER === "postgres" ? "RETURNING id" : ""}
+  `, [
     ticker.toUpperCase(),
     company_name || "",
     shares,
     purchase_price,
     purchase_date || new Date().toISOString().split("T")[0],
     notes || ""
-  ) as { lastInsertRowid: number };
+  ]);
 
-  return NextResponse.json({ id: result.lastInsertRowid, success: true });
+  return NextResponse.json({ id: result.lastInsertId ?? null, success: true });
 }

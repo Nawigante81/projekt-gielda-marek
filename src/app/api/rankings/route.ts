@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRows } from "@/lib/postgres-access";
 
-function getRankedRows(limit: number) {
-  const db = getDb();
-  return db.prepare(`
+async function getRankedRows(limit: number) {
+  return queryRows(`
     SELECT cp.ticker,
       COALESCE(s.company_name, cp.company_name, cp.ticker) as company_name,
       cp.price,
@@ -23,7 +22,7 @@ function getRankedRows(limit: number) {
     WHERE cp.price IS NOT NULL AND ti.ai_score IS NOT NULL
     ORDER BY ti.ai_score DESC, cp.change_pct DESC
     LIMIT ?
-  `).all(limit) as Array<{
+  `, [limit]) as Promise<Array<{
     ticker: string;
     company_name: string;
     price: number;
@@ -34,7 +33,7 @@ function getRankedRows(limit: number) {
     rsi_14: number | null;
     overall_signal: string | null;
     sector: string;
-  }>;
+  }>>;
 }
 
 export async function GET(req: NextRequest) {
@@ -43,7 +42,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseInt(searchParams.get("limit") || "10", 10), 25);
-  const rows = getRankedRows(Math.max(limit, 5));
+  const rows = await getRankedRows(Math.max(limit, 5));
 
   return NextResponse.json({
     topBuy: rows.filter((row) => ["Strong Buy", "Buy"].includes(row.recommendation)).slice(0, limit),

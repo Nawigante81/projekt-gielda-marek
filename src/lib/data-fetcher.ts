@@ -7,18 +7,17 @@ import {
   type NewsArticle,
   type PriceData,
 } from "./market-providers";
+import {
+  queryRow,
+  runSql,
+  upsertCurrentPrice,
+  upsertPriceHistoryRow,
+  upsertStockTimestamp,
+} from "./postgres-access";
 import { aggregateNewsSentiment, analyzeNewsArticle, type AggregatedSentimentResult } from "./news-sentiment";
 
-function saveNewsArticles(ticker: string, articles: NewsArticle[]): AggregatedSentimentResult {
+async function saveNewsArticles(ticker: string, articles: NewsArticle[]): Promise<AggregatedSentimentResult> {
   const db = getDb();
-  const existsStmt = db.prepare(
-    "SELECT id FROM news WHERE ticker = ? AND headline = ? AND published_at = ? LIMIT 1"
-  );
-  const insertStmt = db.prepare(`
-    INSERT INTO news (
-      ticker, headline, summary, source, url, published_at, sentiment_label, sentiment_score, impact_score
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   for (const article of articles) {
     const sentiment = analyzeNewsArticle({
@@ -26,9 +25,16 @@ function saveNewsArticles(ticker: string, articles: NewsArticle[]): AggregatedSe
       summary: article.summary,
       publishedAt: article.published_at,
     });
-    const exists = existsStmt.get(ticker, article.headline, article.published_at);
+    const exists = await queryRow<{ id: number }>(
+      "SELECT id FROM news WHERE ticker = ? AND headline = ? AND published_at = ? LIMIT 1",
+      [ticker, article.headline, article.published_at]
+    );
     if (!exists) {
-      insertStmt.run(
+      await runSql(`
+        INSERT INTO news (
+          ticker, headline, summary, source, url, published_at, sentiment_label, sentiment_score, impact_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
         ticker,
         article.headline,
         article.summary,
@@ -38,7 +44,7 @@ function saveNewsArticles(ticker: string, articles: NewsArticle[]): AggregatedSe
         sentiment.label,
         sentiment.score,
         sentiment.impactScore
-      );
+      ]);
     }
   }
 
@@ -50,10 +56,10 @@ function saveNewsArticles(ticker: string, articles: NewsArticle[]): AggregatedSe
     }))
   );
 
-  db.prepare(`
+  await runSql(`
     INSERT INTO sentiment (ticker, source_type, score, label, impact_score, source_count, summary, metadata_json)
     VALUES (?, 'news', ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     ticker,
     aggregated.score,
     aggregated.label,
@@ -61,7 +67,7 @@ function saveNewsArticles(ticker: string, articles: NewsArticle[]): AggregatedSe
     aggregated.sourceCount,
     aggregated.summary,
     JSON.stringify({ articleCount: articles.length })
-  );
+  ]);
 
   return aggregated;
 }
@@ -87,63 +93,38 @@ export async function fetchPrice(ticker: string): Promise<PriceData | null> {
   }
 
   if (data) {
-    const db = getDb();
-    const averageVolume = db.prepare(`
+    const averageVolume = await queryRow<{ avgVolume: number | null }>(`
       SELECT AVG(volume) as avgVolume
       FROM price_history
       WHERE ticker = ? AND volume IS NOT NULL
       ORDER BY date DESC
       LIMIT 20
-    `).get(ticker) as { avgVolume: number | null } | undefined;
+    `, [ticker]);
 
-    db.prepare(`
-      INSERT OR REPLACE INTO current_prices
-      (ticker, price, change_pct, change_abs, volume, avg_volume, source, last_updated)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(
+    await upsertCurrentPrice({
       ticker,
-      data.price,
-      data.change_pct,
-      data.change_abs,
-      data.volume,
-      averageVolume?.avgVolume || null,
-      data.source
-    );
+      price: data.price,
+      changePct: data.change_pct,
+      changeAbs: data.change_abs,
+      volume: data.volume,
+      avgVolume: averageVolume?.avgVolume || null,
+      source: data.source,
+    });
 
     const today = new Date().toISOString().split("T")[0];
-    db.prepare(`
-      INSERT OR REPLACE INTO price_history (ticker, date, open, high, low, close, volume, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    const barData = {
       ticker,
-      today,
-      data.open || data.price,
-      data.high || data.price,
-      data.low || data.price,
-      data.price,
-      data.volume,
-      data.source
-    );
-
-    db.prepare(`
-      INSERT OR REPLACE INTO stock_prices (ticker, date, open, high, low, close, volume, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      ticker,
-      today,
-      data.open || data.price,
-      data.high || data.price,
-      data.low || data.price,
-      data.price,
-      data.volume,
-      data.source
-    );
-
-    db.prepare(`
-      INSERT INTO stocks (ticker, updated_at)
-      VALUES (?, datetime('now'))
-      ON CONFLICT(ticker) DO UPDATE SET updated_at = datetime('now')
-    `).run(ticker);
+      date: today,
+      open: data.open || data.price,
+      high: data.high || data.price,
+      low: data.low || data.price,
+      close: data.price,
+      volume: data.volume,
+      source: data.source,
+    };
+    await upsertPriceHistoryRow({ table: "price_history", ...barData });
+    await upsertPriceHistoryRow({ table: "stock_prices", ...barData });
+    await upsertStockTimestamp(ticker);
   }
 
   return data;
@@ -168,23 +149,21 @@ export async function fetchNews(ticker: string): Promise<AggregatedSentimentResu
     };
   }
 
-  return saveNewsArticles(ticker, articles);
+  return await saveNewsArticles(ticker, articles);
 }
 
-function logError(
+async function logError(
   ticker: string | null,
   source: string,
   errorType: string,
   message: string
-): void {
+): Promise<void> {
   try {
-    const db = getDb();
-    db.prepare(`
+    await runSql(`
       INSERT INTO fetch_errors (ticker, source, error_type, message)
       VALUES (?, ?, ?, ?)
-    `).run(ticker, source, errorType, message);
+    `, [ticker, source, errorType, message]);
   } catch {
     // ignore
   }
 }
-

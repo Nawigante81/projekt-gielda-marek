@@ -1,7 +1,18 @@
-import { getDb, getSetting } from "./db";
+import { getSetting } from "./db";
 import { fetchPrice, fetchHistoricalData, fetchNews } from "./data-fetcher";
 import { calculateTechnicals, type OHLCV } from "./technicals";
 import { calculateStockScore, type StockScoreResult } from "./stock-scoring";
+import {
+  getSettingValue,
+  queryRow,
+  queryRows,
+  runSql,
+  upsertPriceHistoryRow,
+  upsertSectorAnalysis,
+  upsertStockCompany,
+  upsertTechnicalIndicators,
+  updateMarketIndex,
+} from "./postgres-access";
 
 interface PortfolioItem {
   id: number;
@@ -34,14 +45,8 @@ interface SentimentSnapshot {
 }
 
 export async function runFullAnalysis(reportType = "manual"): Promise<number> {
-  const db = getDb();
-
-  const portfolio = db
-    .prepare("SELECT * FROM portfolio")
-    .all() as PortfolioItem[];
-  const watchlist = db
-    .prepare("SELECT * FROM watchlist")
-    .all() as WatchlistItem[];
+  const portfolio = await queryRows<PortfolioItem>("SELECT * FROM portfolio");
+  const watchlist = await queryRows<WatchlistItem>("SELECT * FROM watchlist");
 
   const allTickers = [
     ...new Set([
@@ -53,11 +58,10 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
   const companyNameByTicker = new Map<string, string>();
   for (const item of [...portfolio, ...watchlist]) {
     companyNameByTicker.set(item.ticker, item.company_name || item.ticker);
-    db.prepare(`
-      INSERT INTO stocks (ticker, company_name, updated_at)
-      VALUES (?, ?, datetime('now'))
-      ON CONFLICT(ticker) DO UPDATE SET company_name = excluded.company_name, updated_at = datetime('now')
-    `).run(item.ticker, item.company_name || item.ticker);
+    await upsertStockCompany({
+      ticker: item.ticker,
+      companyName: item.company_name || item.ticker,
+    });
   }
 
   // Market indices tickers
@@ -111,11 +115,13 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
         marketStatus = pd.price > 25 ? "risk_off" : pd.price < 15 ? "risk_on" : "neutral";
       }
 
-      db.prepare(`
-        UPDATE market_indices 
-        SET value = ?, change_pct = ?, trend = ?, market_status = ?, last_updated = datetime('now')
-        WHERE symbol = ?
-      `).run(pd.price, pd.change_pct, trend, marketStatus, symbol);
+      await updateMarketIndex({
+        symbol,
+        value: pd.price,
+        changePct: pd.change_pct,
+        trend,
+        marketStatus,
+      });
     }
   }
 
@@ -126,31 +132,30 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
   for (const ticker of allTickers) {
     try {
       // Get historical data
-      let history = db
-        .prepare(
-          "SELECT * FROM price_history WHERE ticker = ? ORDER BY date ASC LIMIT 250"
-        )
-        .all(ticker) as Array<{
+      let history = await queryRows<{
         date: string;
         open: number;
         high: number;
         low: number;
         close: number;
         volume: number;
-      }>;
+      }>("SELECT * FROM price_history WHERE ticker = ? ORDER BY date ASC LIMIT 250", [ticker]);
 
       if (history.length < 50) {
-        // Fetch from API
         const bars = await fetchHistoricalData(ticker, 200);
         if (bars.length > 0) {
-          const insertBar = db.prepare(`
-            INSERT OR REPLACE INTO price_history (ticker, date, open, high, low, close, volume, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'yahoo')
-          `);
           for (const bar of bars) {
-            insertBar.run(
-              ticker, bar.date, bar.open, bar.high, bar.low, bar.close, bar.volume
-            );
+            await upsertPriceHistoryRow({
+              table: "price_history",
+              ticker,
+              date: bar.date,
+              open: bar.open,
+              high: bar.high,
+              low: bar.low,
+              close: bar.close,
+              volume: bar.volume,
+              source: "yahoo",
+            });
           }
           history = bars;
         }
@@ -172,70 +177,62 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
           });
           scoreResults[ticker] = scoreResult;
 
-          // Save to DB
-          db.prepare(`
-            INSERT OR REPLACE INTO technical_indicators (
-              ticker, calculated_at,
-              sma_20, sma_50, sma_200,
-              ema_12, ema_26, ema_50,
-              rsi_14,
-              macd_line, macd_signal, macd_histogram,
-              bb_upper, bb_middle, bb_lower, bb_width,
-              stoch_k, stoch_d,
-              adx, plus_di, minus_di,
-              ichimoku_tenkan, ichimoku_kijun, ichimoku_senkou_a, ichimoku_senkou_b,
-              fib_0, fib_236, fib_382, fib_500, fib_618, fib_100,
-              signal_sma, signal_ema, signal_macd, signal_rsi, signal_bb,
-              signal_stoch, signal_adx, signal_ichimoku, signal_fib,
-              overall_signal, overall_score,
-              ai_score, recommendation,
-              trend_score, rsi_score, macd_score, volume_score,
-              sma_score, ema_score, bb_score, adx_score, sentiment_score
-            ) VALUES (
-              ?, datetime('now'),
-              ?, ?, ?,
-              ?, ?, ?,
-              ?,
-              ?, ?, ?,
-              ?, ?, ?, ?,
-              ?, ?,
-              ?, ?, ?,
-              ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?,
-              ?, ?, ?, ?, ?,
-              ?, ?, ?, ?,
-              ?, ?,
-              ?, ?,
-              ?, ?, ?, ?,
-              ?, ?, ?, ?, ?
-            )
-          `).run(
+          await upsertTechnicalIndicators({
             ticker,
-            technicals.sma_20, technicals.sma_50, technicals.sma_200,
-            technicals.ema_12, technicals.ema_26, technicals.ema_50,
-            technicals.rsi_14,
-            technicals.macd_line, technicals.macd_signal, technicals.macd_histogram,
-            technicals.bb_upper, technicals.bb_middle, technicals.bb_lower, technicals.bb_width,
-            technicals.stoch_k, technicals.stoch_d,
-            technicals.adx, technicals.plus_di, technicals.minus_di,
-            technicals.ichimoku_tenkan, technicals.ichimoku_kijun,
-            technicals.ichimoku_senkou_a, technicals.ichimoku_senkou_b,
-            technicals.fib_0, technicals.fib_236, technicals.fib_382,
-            technicals.fib_500, technicals.fib_618, technicals.fib_100,
-            technicals.signal_sma, technicals.signal_ema, technicals.signal_macd,
-            technicals.signal_rsi, technicals.signal_bb,
-            technicals.signal_stoch, technicals.signal_adx,
-            technicals.signal_ichimoku, technicals.signal_fib,
-            technicals.overall_signal, technicals.overall_score,
-            scoreResult.score, scoreResult.recommendation,
-            scoreResult.breakdown.trend, scoreResult.breakdown.rsi,
-            scoreResult.breakdown.macd, scoreResult.breakdown.volume,
-            scoreResult.breakdown.sma, scoreResult.breakdown.ema,
-            scoreResult.breakdown.bollinger, scoreResult.breakdown.adx,
-            scoreResult.breakdown.sentiment
-          );
+            sma_20: technicals.sma_20,
+            sma_50: technicals.sma_50,
+            sma_200: technicals.sma_200,
+            ema_12: technicals.ema_12,
+            ema_26: technicals.ema_26,
+            ema_50: technicals.ema_50,
+            rsi_14: technicals.rsi_14,
+            macd_line: technicals.macd_line,
+            macd_signal: technicals.macd_signal,
+            macd_histogram: technicals.macd_histogram,
+            bb_upper: technicals.bb_upper,
+            bb_middle: technicals.bb_middle,
+            bb_lower: technicals.bb_lower,
+            bb_width: technicals.bb_width,
+            stoch_k: technicals.stoch_k,
+            stoch_d: technicals.stoch_d,
+            adx: technicals.adx,
+            plus_di: technicals.plus_di,
+            minus_di: technicals.minus_di,
+            ichimoku_tenkan: technicals.ichimoku_tenkan,
+            ichimoku_kijun: technicals.ichimoku_kijun,
+            ichimoku_senkou_a: technicals.ichimoku_senkou_a,
+            ichimoku_senkou_b: technicals.ichimoku_senkou_b,
+            fib_0: technicals.fib_0,
+            fib_236: technicals.fib_236,
+            fib_382: technicals.fib_382,
+            fib_500: technicals.fib_500,
+            fib_618: technicals.fib_618,
+            fib_100: technicals.fib_100,
+            signal_sma: technicals.signal_sma,
+            signal_ema: technicals.signal_ema,
+            signal_macd: technicals.signal_macd,
+            signal_rsi: technicals.signal_rsi,
+            signal_bb: technicals.signal_bb,
+            signal_stoch: technicals.signal_stoch,
+            signal_adx: technicals.signal_adx,
+            signal_ichimoku: technicals.signal_ichimoku,
+            signal_fib: technicals.signal_fib,
+            overall_signal: technicals.overall_signal,
+            overall_score: technicals.overall_score,
+            ai_score: scoreResult.score,
+            recommendation: scoreResult.recommendation,
+            trend_score: scoreResult.breakdown.trend,
+            rsi_score: scoreResult.breakdown.rsi,
+            macd_score: scoreResult.breakdown.macd,
+            volume_score: scoreResult.breakdown.volume,
+            sma_score: scoreResult.breakdown.sma,
+            ema_score: scoreResult.breakdown.ema,
+            bb_score: scoreResult.breakdown.bollinger,
+            adx_score: scoreResult.breakdown.adx,
+            sentiment_score: scoreResult.breakdown.sentiment,
+          });
 
-          saveAnalysisSnapshot(
+          await saveAnalysisSnapshot(
             ticker,
             companyNameByTicker.get(ticker) || ticker,
             priceResults[ticker],
@@ -245,10 +242,9 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
             reportType
           );
 
-          refreshPerformanceTracking(ticker);
+          await refreshPerformanceTracking(ticker);
 
-          // Generate alerts
-          generateAlerts(ticker, priceResults[ticker], technicals, history, scoreResult);
+          await generateAlerts(ticker, priceResults[ticker], technicals, history, scoreResult);
         }
       }
     } catch (err) {
@@ -256,7 +252,7 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
     }
   }
 
-  updateSectorAnalysis(allTickers, priceResults, sentimentResults, companyNameByTicker);
+  await updateSectorAnalysis(allTickers, priceResults, sentimentResults, companyNameByTicker);
 
   // Generate AI report
   const reportId = await generateAIReport(
@@ -274,27 +270,26 @@ export async function runFullAnalysis(reportType = "manual"): Promise<number> {
   return reportId;
 }
 
-function generateAlerts(
+async function generateAlerts(
   ticker: string,
   priceData: PriceSnapshot | undefined,
   technicals: ReturnType<typeof calculateTechnicals>,
   history: OHLCV[],
   scoreResult: StockScoreResult
-): void {
+): Promise<void> {
   if (!technicals || !priceData) return;
-  const db = getDb();
   const today = new Date().toISOString().split("T")[0];
   const previousBar = history[history.length - 2];
   const latestBar = history[history.length - 1];
   const previousTechnicals = history.length >= 30 ? calculateTechnicals(history.slice(0, -1)) : null;
   const avgVolume20 = history.slice(-20).reduce((sum, bar) => sum + (bar.volume || 0), 0) / Math.max(Math.min(history.length, 20), 1);
 
-  const isRuleEnabled = (ruleKey: string): boolean => {
-    const row = db.prepare("SELECT is_enabled FROM alert_rules WHERE rule_key = ?").get(ruleKey) as { is_enabled: number } | undefined;
+  const isRuleEnabled = async (ruleKey: string): Promise<boolean> => {
+    const row = await queryRow<{ is_enabled: number }>("SELECT is_enabled FROM alert_rules WHERE rule_key = ?", [ruleKey]);
     return row ? row.is_enabled === 1 : true;
   };
 
-  const insertAlert = (
+  const insertAlert = async (
     type: string,
     severity: string,
     message: string,
@@ -303,16 +298,15 @@ function generateAlerts(
     ruleKey?: string,
     metadata?: Record<string, unknown>
   ) => {
-    if (ruleKey && !isRuleEnabled(ruleKey)) return;
-    // Check if similar alert exists today
-    const exists = db.prepare(`
+    if (ruleKey && !(await isRuleEnabled(ruleKey))) return;
+    const exists = await queryRow<{ id: number }>(`
       SELECT id FROM alerts WHERE ticker = ? AND alert_type = ? AND date(created_at) = ?
-    `).get(ticker, type, today);
+    `, [ticker, type, today]);
     if (!exists) {
-      db.prepare(`
+      await runSql(`
         INSERT INTO alerts (ticker, alert_type, severity, message, value, threshold, rule_key, metadata_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      `, [
         ticker,
         type,
         severity,
@@ -320,53 +314,53 @@ function generateAlerts(
         value ?? null,
         threshold ?? null,
         ruleKey ?? null,
-        metadata ? JSON.stringify(metadata) : null
-      );
+        metadata ? JSON.stringify(metadata) : null,
+      ]);
     }
   };
 
   const rsi = technicals.rsi_14;
-  const rsiOverbought = parseFloat(getSetting("rsi_overbought") || "70");
-  const rsiOversold = parseFloat(getSetting("rsi_oversold") || "30");
+  const rsiOverbought = parseFloat((await getSettingValue("rsi_overbought")) || "70");
+  const rsiOversold = parseFloat((await getSettingValue("rsi_oversold")) || "30");
 
   if (rsi !== null) {
     if (rsi > rsiOverbought) {
-      insertAlert("rsi_overbought", "warning", `${ticker}: RSI ${rsi.toFixed(1)} przekroczył ${rsiOverbought} (wykupienie)`, rsi, rsiOverbought, "rsi_above_70");
+      await insertAlert("rsi_overbought", "warning", `${ticker}: RSI ${rsi.toFixed(1)} przekroczył ${rsiOverbought} (wykupienie)`, rsi, rsiOverbought, "rsi_above_70");
     }
     if (rsi < rsiOversold) {
-      insertAlert("rsi_oversold", "warning", `${ticker}: RSI ${rsi.toFixed(1)} poniżej ${rsiOversold} (wyprzedanie)`, rsi, rsiOversold, "rsi_below_30");
+      await insertAlert("rsi_oversold", "warning", `${ticker}: RSI ${rsi.toFixed(1)} poniżej ${rsiOversold} (wyprzedanie)`, rsi, rsiOversold, "rsi_below_30");
     }
   }
 
   if (previousTechnicals && previousTechnicals.sma_50 !== null && previousTechnicals.sma_200 !== null && technicals.sma_50 !== null && technicals.sma_200 !== null) {
     if (previousTechnicals.sma_50 <= previousTechnicals.sma_200 && technicals.sma_50 > technicals.sma_200) {
-      insertAlert("golden_cross", "info", `${ticker}: Golden Cross (SMA50 powyżej SMA200)`, technicals.sma_50, technicals.sma_200, "golden_cross");
+      await insertAlert("golden_cross", "info", `${ticker}: Golden Cross (SMA50 powyżej SMA200)`, technicals.sma_50, technicals.sma_200, "golden_cross");
     }
     if (previousTechnicals.sma_50 >= previousTechnicals.sma_200 && technicals.sma_50 < technicals.sma_200) {
-      insertAlert("death_cross", "critical", `${ticker}: Death Cross (SMA50 poniżej SMA200)`, technicals.sma_50, technicals.sma_200, "death_cross");
+      await insertAlert("death_cross", "critical", `${ticker}: Death Cross (SMA50 poniżej SMA200)`, technicals.sma_50, technicals.sma_200, "death_cross");
     }
   }
 
   if (previousTechnicals && previousTechnicals.ema_12 !== null && previousTechnicals.ema_26 !== null && technicals.ema_12 !== null && technicals.ema_26 !== null) {
     if (previousTechnicals.ema_12 <= previousTechnicals.ema_26 && technicals.ema_12 > technicals.ema_26) {
-      insertAlert("ema_bullish_cross", "info", `${ticker}: EMA12 przecięła EMA26 w górę`, technicals.ema_12, technicals.ema_26, "ema_cross");
+      await insertAlert("ema_bullish_cross", "info", `${ticker}: EMA12 przecięła EMA26 w górę`, technicals.ema_12, technicals.ema_26, "ema_cross");
     }
     if (previousTechnicals.ema_12 >= previousTechnicals.ema_26 && technicals.ema_12 < technicals.ema_26) {
-      insertAlert("ema_bearish_cross", "warning", `${ticker}: EMA12 przecięła EMA26 w dół`, technicals.ema_12, technicals.ema_26, "ema_cross");
+      await insertAlert("ema_bearish_cross", "warning", `${ticker}: EMA12 przecięła EMA26 w dół`, technicals.ema_12, technicals.ema_26, "ema_cross");
     }
   }
 
   if (previousBar && previousTechnicals && previousTechnicals.sma_200 !== null && technicals.sma_200 !== null) {
     if (previousBar.close <= previousTechnicals.sma_200 && latestBar.close > technicals.sma_200) {
-      insertAlert("break_above_sma200", "info", `${ticker}: Cena przebiła SMA200 w górę`, latestBar.close, technicals.sma_200, "break_sma200");
+      await insertAlert("break_above_sma200", "info", `${ticker}: Cena przebiła SMA200 w górę`, latestBar.close, technicals.sma_200, "break_sma200");
     }
     if (previousBar.close >= previousTechnicals.sma_200 && latestBar.close < technicals.sma_200) {
-      insertAlert("break_below_sma200", "warning", `${ticker}: Cena spadła poniżej SMA200`, latestBar.close, technicals.sma_200, "break_sma200");
+      await insertAlert("break_below_sma200", "warning", `${ticker}: Cena spadła poniżej SMA200`, latestBar.close, technicals.sma_200, "break_sma200");
     }
   }
 
   if (avgVolume20 > 0 && latestBar.volume > avgVolume20 * 3) {
-    insertAlert(
+    await insertAlert(
       "volume_spike_300",
       "warning",
       `${ticker}: Wolumen ${(latestBar.volume / avgVolume20 * 100).toFixed(0)}% średniej 20d`,
@@ -382,37 +376,37 @@ function generateAlerts(
     const periodHigh = Math.max(...highs);
     const periodLow = Math.min(...lows);
     if (latestBar.high >= periodHigh) {
-      insertAlert("new_ath", "info", `${ticker}: Nowe ATH / 52-week high`, latestBar.high, periodHigh, "new_ath");
+      await insertAlert("new_ath", "info", `${ticker}: Nowe ATH / 52-week high`, latestBar.high, periodHigh, "new_ath");
     }
     if (latestBar.low <= periodLow) {
-      insertAlert("new_atl", "warning", `${ticker}: Nowe ATL / 52-week low`, latestBar.low, periodLow, "new_atl");
+      await insertAlert("new_atl", "warning", `${ticker}: Nowe ATL / 52-week low`, latestBar.low, periodLow, "new_atl");
     }
   }
 
   if (previousBar) {
     if (latestBar.open > previousBar.high * 1.01) {
-      insertAlert("gap_up", "info", `${ticker}: Gap Up na otwarciu`, latestBar.open, previousBar.high, "gap_up");
+      await insertAlert("gap_up", "info", `${ticker}: Gap Up na otwarciu`, latestBar.open, previousBar.high, "gap_up");
     }
     if (latestBar.open < previousBar.low * 0.99) {
-      insertAlert("gap_down", "warning", `${ticker}: Gap Down na otwarciu`, latestBar.open, previousBar.low, "gap_down");
+      await insertAlert("gap_down", "warning", `${ticker}: Gap Down na otwarciu`, latestBar.open, previousBar.low, "gap_down");
     }
   }
 
   if (technicals.signal_macd === "bullish") {
-    insertAlert("macd_bullish", "info", `${ticker}: Sygnał MACD bullish`, technicals.macd_histogram ?? undefined, undefined, undefined, { aiScore: scoreResult.score });
+    await insertAlert("macd_bullish", "info", `${ticker}: Sygnał MACD bullish`, technicals.macd_histogram ?? undefined, undefined, undefined, { aiScore: scoreResult.score });
   }
   if (technicals.signal_macd === "bearish") {
-    insertAlert("macd_bearish", "warning", `${ticker}: Sygnał MACD bearish`, technicals.macd_histogram ?? undefined, undefined, undefined, { aiScore: scoreResult.score });
+    await insertAlert("macd_bearish", "warning", `${ticker}: Sygnał MACD bearish`, technicals.macd_histogram ?? undefined, undefined, undefined, { aiScore: scoreResult.score });
   }
 
   if (technicals.adx && technicals.adx > 25) {
-    insertAlert("adx_strong_trend", "info", `${ticker}: ADX ${technicals.adx.toFixed(1)} - silny trend`, technicals.adx, 25, undefined, { recommendation: scoreResult.recommendation });
+    await insertAlert("adx_strong_trend", "info", `${ticker}: ADX ${technicals.adx.toFixed(1)} - silny trend`, technicals.adx, 25, undefined, { recommendation: scoreResult.recommendation });
   }
 
-  const priceThreshold = parseFloat(getSetting("price_move_threshold") || "5");
+  const priceThreshold = parseFloat((await getSettingValue("price_move_threshold")) || "5");
   if (Math.abs(priceData.change_pct) > priceThreshold) {
     const severity = Math.abs(priceData.change_pct) > 10 ? "critical" : "warning";
-    insertAlert(
+    await insertAlert(
       "large_price_move",
       severity,
       `${ticker}: Duży ruch ceny ${priceData.change_pct > 0 ? "+" : ""}${priceData.change_pct.toFixed(2)}%`,
@@ -424,14 +418,14 @@ function generateAlerts(
   }
 
   if (technicals.overall_signal === "strong_bullish") {
-    insertAlert("strong_bullish_signal", "info", `${ticker}: STRONG BULLISH - zbieżność wskaźników wzrostowych`, technicals.overall_score, undefined, undefined, { aiScore: scoreResult.score });
+    await insertAlert("strong_bullish_signal", "info", `${ticker}: STRONG BULLISH - zbieżność wskaźników wzrostowych`, technicals.overall_score, undefined, undefined, { aiScore: scoreResult.score });
   }
   if (technicals.overall_signal === "strong_bearish") {
-    insertAlert("strong_bearish_signal", "critical", `${ticker}: STRONG BEARISH - zbieżność wskaźników spadkowych`, technicals.overall_score, undefined, undefined, { aiScore: scoreResult.score });
+    await insertAlert("strong_bearish_signal", "critical", `${ticker}: STRONG BEARISH - zbieżność wskaźników spadkowych`, technicals.overall_score, undefined, undefined, { aiScore: scoreResult.score });
   }
 }
 
-function saveAnalysisSnapshot(
+async function saveAnalysisSnapshot(
   ticker: string,
   companyName: string,
   priceData: PriceSnapshot,
@@ -439,8 +433,7 @@ function saveAnalysisSnapshot(
   scoreResult: StockScoreResult,
   sentiment: SentimentSnapshot | undefined,
   reportType: string
-): void {
-  const db = getDb();
+): Promise<void> {
   const details = {
     overallSignal: technicals.overall_signal,
     overallScore: technicals.overall_score,
@@ -449,11 +442,11 @@ function saveAnalysisSnapshot(
     sentiment,
   };
 
-  const historyResult = db.prepare(`
+  const historyResult = await runSql(`
     INSERT INTO analysis_history (
       ticker, company_name, price, score, recommendation, sentiment, change_pct, volume, report_type, details_json
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     ticker,
     companyName,
     priceData.price,
@@ -463,60 +456,59 @@ function saveAnalysisSnapshot(
     priceData.change_pct,
     priceData.volume,
     reportType,
-    JSON.stringify(details)
-  ) as { lastInsertRowid: number };
+    JSON.stringify(details),
+  ]);
 
-  const recommendationResult = db.prepare(`
+  const recommendationResult = await runSql(`
     INSERT INTO recommendations (
       ticker, analysis_history_id, score, recommendation, entry_price, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `).run(
+  `, [
     ticker,
-    historyResult.lastInsertRowid,
+    historyResult.lastInsertId ?? null,
     scoreResult.score,
     scoreResult.recommendation,
-    priceData.price
-  ) as { lastInsertRowid: number };
+    priceData.price,
+  ]);
 
-  db.prepare(`
+  await runSql(`
     INSERT INTO performance_tracking (
       recommendation_id, ticker, entry_price, updated_at, created_at
     ) VALUES (?, ?, ?, datetime('now'), datetime('now'))
-  `).run(recommendationResult.lastInsertRowid, ticker, priceData.price);
+  `, [recommendationResult.lastInsertId ?? null, ticker, priceData.price]);
 }
 
-function refreshPerformanceTracking(ticker: string): void {
-  const db = getDb();
-  const rows = db.prepare(`
-    SELECT pt.id, pt.entry_price, r.recommendation, r.created_at
-    FROM performance_tracking pt
-    JOIN recommendations r ON r.id = pt.recommendation_id
-    WHERE pt.ticker = ?
-  `).all(ticker) as Array<{
+async function refreshPerformanceTracking(ticker: string): Promise<void> {
+  const rows = await queryRows<{
     id: number;
     entry_price: number;
     recommendation: string;
     created_at: string;
-  }>;
+  }>(`
+    SELECT pt.id, pt.entry_price, r.recommendation, r.created_at
+    FROM performance_tracking pt
+    JOIN recommendations r ON r.id = pt.recommendation_id
+    WHERE pt.ticker = ?
+  `, [ticker]);
 
-  const getPriceForHorizon = (targetDate: Date): number | null => {
+  const getPriceForHorizon = async (targetDate: Date): Promise<number | null> => {
     const isoDate = targetDate.toISOString().slice(0, 10);
-    const future = db.prepare(`
+    const future = await queryRow<{ close: number }>(`
       SELECT close FROM stock_prices WHERE ticker = ? AND date >= ? ORDER BY date ASC LIMIT 1
-    `).get(ticker, isoDate) as { close: number } | undefined;
+    `, [ticker, isoDate]);
     if (future?.close) return future.close;
-    const latest = db.prepare(`
+    const latest = await queryRow<{ close: number }>(`
       SELECT close FROM stock_prices WHERE ticker = ? ORDER BY date DESC LIMIT 1
-    `).get(ticker) as { close: number } | undefined;
+    `, [ticker]);
     return latest?.close || null;
   };
 
   for (const row of rows) {
     const createdAt = new Date(row.created_at);
-    const price7d = getPriceForHorizon(new Date(createdAt.getTime() + 7 * 86400000));
-    const price30d = getPriceForHorizon(new Date(createdAt.getTime() + 30 * 86400000));
-    const price90d = getPriceForHorizon(new Date(createdAt.getTime() + 90 * 86400000));
-    const price180d = getPriceForHorizon(new Date(createdAt.getTime() + 180 * 86400000));
+    const price7d = await getPriceForHorizon(new Date(createdAt.getTime() + 7 * 86400000));
+    const price30d = await getPriceForHorizon(new Date(createdAt.getTime() + 30 * 86400000));
+    const price90d = await getPriceForHorizon(new Date(createdAt.getTime() + 90 * 86400000));
+    const price180d = await getPriceForHorizon(new Date(createdAt.getTime() + 180 * 86400000));
     const direction = row.recommendation.includes("Sell") ? -1 : 1;
     const calcReturn = (price: number | null) =>
       price && row.entry_price > 0 ? (((price - row.entry_price) / row.entry_price) * 100) * direction : null;
@@ -532,13 +524,13 @@ function refreshPerformanceTracking(ticker: string): void {
       : 0;
     const accuracyLabel = successRate >= 70 ? "accurate" : successRate <= 35 ? "miss" : "mixed";
 
-    db.prepare(`
+    await runSql(`
       UPDATE performance_tracking
       SET price_7d = ?, price_30d = ?, price_90d = ?, price_180d = ?,
           return_7d = ?, return_30d = ?, return_90d = ?, return_180d = ?,
           success_rate = ?, average_return = ?, accuracy_label = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(
+    `, [
       price7d,
       price30d,
       price90d,
@@ -550,18 +542,17 @@ function refreshPerformanceTracking(ticker: string): void {
       successRate,
       averageReturn,
       accuracyLabel,
-      row.id
-    );
+      row.id,
+    ]);
   }
 }
 
-function updateSectorAnalysis(
+async function updateSectorAnalysis(
   tickers: string[],
   priceResults: Record<string, PriceSnapshot>,
   sentimentResults: Record<string, SentimentSnapshot>,
   companyNameByTicker: Map<string, string>
-): void {
-  const db = getDb();
+): Promise<void> {
   const sectorMap: Record<string, string[]> = {
     Technology: ["AAPL", "MSFT", "NVDA", "AMD", "META", "GOOGL"],
     "Artificial Intelligence": ["NVDA", "AMD", "PLTR", "MSFT", "GOOGL", "META"],
@@ -594,33 +585,18 @@ function updateSectorAnalysis(
     const best = memberSnapshots[0];
     const worst = memberSnapshots[memberSnapshots.length - 1];
 
-    db.prepare(`
-      INSERT INTO sector_analysis (
-        sector, analysis_date, avg_change_pct, sentiment_score, sentiment_label,
-        best_ticker, best_change_pct, worst_ticker, worst_change_pct, constituents_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT(sector, analysis_date) DO UPDATE SET
-        avg_change_pct = excluded.avg_change_pct,
-        sentiment_score = excluded.sentiment_score,
-        sentiment_label = excluded.sentiment_label,
-        best_ticker = excluded.best_ticker,
-        best_change_pct = excluded.best_change_pct,
-        worst_ticker = excluded.worst_ticker,
-        worst_change_pct = excluded.worst_change_pct,
-        constituents_json = excluded.constituents_json,
-        created_at = datetime('now')
-    `).run(
+    await upsertSectorAnalysis({
       sector,
       analysisDate,
-      avgChange,
-      avgSentiment,
+      avgChangePct: avgChange,
+      sentimentScore: avgSentiment,
       sentimentLabel,
-      best?.ticker || null,
-      best?.change_pct || 0,
-      worst?.ticker || null,
-      worst?.change_pct || 0,
-      JSON.stringify(memberSnapshots)
-    );
+      bestTicker: best?.ticker || null,
+      bestChangePct: best?.change_pct || 0,
+      worstTicker: worst?.ticker || null,
+      worstChangePct: worst?.change_pct || 0,
+      constituentsJson: JSON.stringify(memberSnapshots),
+    });
   }
 }
 
@@ -632,13 +608,11 @@ async function generateAIReport(
   scoreResults: Record<string, StockScoreResult>,
   reportType: string
 ): Promise<number> {
-  const db = getDb();
-
   // Build context for AI
   const marketContext = buildMarketContext(priceResults);
   const portfolioContext = buildPortfolioContext(portfolio, priceResults, technicalResults, scoreResults);
   const watchlistContext = buildWatchlistContext(watchlist, priceResults, technicalResults, scoreResults);
-  const alertsContext = buildAlertsContext();
+  const alertsContext = await buildAlertsContext();
 
   const systemPrompt = `Jesteś analitykiem technicznym rynku akcji USA. Analizujesz dane i tworzysz KRÓTKIE, TECHNICZNE raporty w języku polskim. 
 NIE jesteś doradcą inwestycyjnym - nie piszesz "kup", "sprzedaj", "gwarantowany zysk". 
@@ -673,8 +647,8 @@ Format: zwięzły, techniczny, bez zbędnych ozdobników.`;
   let marketSentiment = "neutral";
 
   try {
-    const openaiKey = process.env.OPENAI_API_KEY || getSetting("openai_api_key");
-    const openaiBase = process.env.OPENAI_BASE_URL || getSetting("openai_base_url") || "https://api.openai.com/v1";
+    const openaiKey = process.env.OPENAI_API_KEY || (await getSettingValue("openai_api_key")) || "";
+    const openaiBase = process.env.OPENAI_BASE_URL || (await getSettingValue("openai_base_url")) || "https://api.openai.com/v1";
 
     if (openaiKey) {
       const res = await fetch(`${openaiBase}/chat/completions`, {
@@ -721,12 +695,12 @@ Format: zwięzły, techniczny, bez zbędnych ozdobników.`;
   else if (spyChange < -0.5 || vixPrice > 25) marketSentiment = "risk_off";
 
   // Save report
-  const result = db.prepare(`
+  const result = await runSql(`
     INSERT INTO ai_reports (report_type, trigger_time, content, market_sentiment)
     VALUES (?, datetime('now'), ?, ?)
-  `).run(reportType, reportContent, marketSentiment) as { lastInsertRowid: number };
+  `, [reportType, reportContent, marketSentiment]);
 
-  return result.lastInsertRowid as number;
+  return result.lastInsertId as number;
 }
 
 function buildMarketContext(
@@ -796,13 +770,10 @@ function buildWatchlistContext(
     .join("\n");
 }
 
-function buildAlertsContext(): string {
-  const db = getDb();
-  const alerts = db
-    .prepare(
-      "SELECT * FROM alerts WHERE is_read = 0 ORDER BY created_at DESC LIMIT 10"
-    )
-    .all() as Array<{ severity: string; message: string }>;
+async function buildAlertsContext(): Promise<string> {
+  const alerts = await queryRows<{ severity: string; message: string }>(
+    "SELECT * FROM alerts WHERE is_read = 0 ORDER BY created_at DESC LIMIT 10"
+  );
 
   if (alerts.length === 0) return "Brak aktywnych alertów";
   return alerts.map((a) => `[${a.severity.toUpperCase()}] ${a.message}`).join("\n");
@@ -836,16 +807,13 @@ ${alertsContext}
 }
 
 async function sendNotifications(reportId: number): Promise<void> {
-  const db = getDb();
-  const report = db
-    .prepare("SELECT * FROM ai_reports WHERE id = ?")
-    .get(reportId) as { content: string } | undefined;
+  const report = await queryRow<{ content: string }>("SELECT * FROM ai_reports WHERE id = ?", [reportId]);
   if (!report) return;
 
-  const telegramEnabled = getSetting("notifications_telegram") === "1";
+  const telegramEnabled = (await getSettingValue("notifications_telegram")) === "1";
   if (telegramEnabled) {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN || getSetting("telegram_bot_token");
-    const chatId = process.env.TELEGRAM_CHAT_ID || getSetting("telegram_chat_id");
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || (await getSettingValue("telegram_bot_token"));
+    const chatId = process.env.TELEGRAM_CHAT_ID || (await getSettingValue("telegram_chat_id"));
     if (botToken && chatId) {
       try {
         const message = report.content.substring(0, 4000);
@@ -868,9 +836,9 @@ async function sendNotifications(reportId: number): Promise<void> {
     }
   }
 
-  const webhookEnabled = getSetting("notifications_webhook") === "1";
+  const webhookEnabled = (await getSettingValue("notifications_webhook")) === "1";
   if (webhookEnabled) {
-    const webhookUrl = getSetting("webhook_url");
+    const webhookUrl = await getSettingValue("webhook_url");
     if (webhookUrl) {
       try {
         await fetch(webhookUrl, {

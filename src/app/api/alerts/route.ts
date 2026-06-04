@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRows, runSql } from "@/lib/postgres-access";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -10,12 +10,11 @@ export async function GET(req: NextRequest) {
   const unreadOnly = searchParams.get("unread") === "true";
   const limit = parseInt(searchParams.get("limit") || "50");
 
-  const db = getDb();
   const query = unreadOnly
     ? "SELECT * FROM alerts WHERE is_read = 0 ORDER BY created_at DESC LIMIT ?"
     : "SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?";
 
-  const alerts = db.prepare(query).all(limit);
+  const alerts = await queryRows(query, [limit]);
   return NextResponse.json(alerts);
 }
 
@@ -24,14 +23,11 @@ export async function PATCH(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { ids, markAll } = await req.json();
-  const db = getDb();
-
   if (markAll) {
-    db.prepare("UPDATE alerts SET is_read = 1").run();
+    await runSql("UPDATE alerts SET is_read = 1");
   } else if (ids && Array.isArray(ids)) {
-    const stmt = db.prepare("UPDATE alerts SET is_read = 1 WHERE id = ?");
     for (const id of ids) {
-      stmt.run(id);
+      await runSql("UPDATE alerts SET is_read = 1 WHERE id = ?", [id]);
     }
   }
 

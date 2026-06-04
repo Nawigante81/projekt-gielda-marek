@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb, getSetting } from "@/lib/db";
+import { getSettingValue, queryRow, queryRows, runSql, upsertSetting } from "@/lib/postgres-access";
 
 interface MarketEventRow {
   event_type: string;
@@ -14,19 +14,19 @@ interface MarketEventRow {
   details_json?: string | null;
 }
 
-function eventExists(db: ReturnType<typeof getDb>, title: string, eventDate: string, source: string): boolean {
-  const row = db.prepare(`
+async function eventExists(title: string, eventDate: string, source: string): Promise<boolean> {
+  const row = await queryRow(`
     SELECT id FROM market_events WHERE title = ? AND event_date = ? AND source = ? LIMIT 1
-  `).get(title, eventDate, source);
+  `, [title, eventDate, source]);
   return Boolean(row);
 }
 
-function insertEvent(db: ReturnType<typeof getDb>, event: MarketEventRow): void {
-  if (eventExists(db, event.title, event.event_date, event.source || "unknown")) return;
-  db.prepare(`
+async function insertEvent(event: MarketEventRow): Promise<void> {
+  if (await eventExists(event.title, event.event_date, event.source || "unknown")) return;
+  await runSql(`
     INSERT INTO market_events (event_type, title, ticker, sector, event_date, period_label, impact, source, details_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `, [
     event.event_type,
     event.title,
     event.ticker || null,
@@ -35,8 +35,8 @@ function insertEvent(db: ReturnType<typeof getDb>, event: MarketEventRow): void 
     event.period_label || null,
     event.impact || "medium",
     event.source || null,
-    event.details_json || null
-  );
+    event.details_json || null,
+  ]);
 }
 
 function normalizeDate(value: string | number | undefined): string | null {
@@ -46,7 +46,7 @@ function normalizeDate(value: string | number | undefined): string | null {
   return date.toISOString();
 }
 
-async function refreshTickerEvents(db: ReturnType<typeof getDb>, tickers: string[]): Promise<void> {
+async function refreshTickerEvents(tickers: string[]): Promise<void> {
   for (const ticker of tickers.slice(0, 20)) {
     try {
       const response = await fetch(
@@ -67,7 +67,7 @@ async function refreshTickerEvents(db: ReturnType<typeof getDb>, tickers: string
       const splitFactor = result?.defaultKeyStatistics?.lastSplitFactor || null;
 
       if (earningsDate) {
-        insertEvent(db, {
+        await insertEvent({
           event_type: "earnings",
           title: `${ticker} Earnings`,
           ticker,
@@ -79,7 +79,7 @@ async function refreshTickerEvents(db: ReturnType<typeof getDb>, tickers: string
         });
       }
       if (exDividendDate) {
-        insertEvent(db, {
+        await insertEvent({
           event_type: "dividends",
           title: `${ticker} Ex-Dividend`,
           ticker,
@@ -91,7 +91,7 @@ async function refreshTickerEvents(db: ReturnType<typeof getDb>, tickers: string
         });
       }
       if (splitDate && splitFactor) {
-        insertEvent(db, {
+        await insertEvent({
           event_type: "stock_split",
           title: `${ticker} Split ${splitFactor}`,
           ticker,
@@ -122,7 +122,7 @@ function extractScheduleDates(html: string): string[] {
   return [...new Set(matches.map((match) => new Date(match[0]).toISOString()))];
 }
 
-async function refreshMacroEvents(db: ReturnType<typeof getDb>): Promise<void> {
+async function refreshMacroEvents(): Promise<void> {
   try {
     const [cpiHtml, nfpHtml, fomcHtml] = await Promise.all([
       fetchText("https://www.bls.gov/schedule/news_release/cpi.htm"),
@@ -131,7 +131,7 @@ async function refreshMacroEvents(db: ReturnType<typeof getDb>): Promise<void> {
     ]);
 
     for (const date of extractScheduleDates(cpiHtml).slice(0, 4)) {
-      insertEvent(db, {
+      await insertEvent({
         event_type: "CPI",
         title: "US CPI Release",
         event_date: date,
@@ -140,7 +140,7 @@ async function refreshMacroEvents(db: ReturnType<typeof getDb>): Promise<void> {
       });
     }
     for (const date of extractScheduleDates(nfpHtml).slice(0, 4)) {
-      insertEvent(db, {
+      await insertEvent({
         event_type: "NFP",
         title: "US Nonfarm Payrolls",
         event_date: date,
@@ -149,14 +149,14 @@ async function refreshMacroEvents(db: ReturnType<typeof getDb>): Promise<void> {
       });
     }
     for (const date of extractScheduleDates(fomcHtml).slice(0, 8)) {
-      insertEvent(db, {
+      await insertEvent({
         event_type: "FOMC",
         title: "FOMC Meeting",
         event_date: date,
         impact: "high",
         source: "federal_reserve",
       });
-      insertEvent(db, {
+      await insertEvent({
         event_type: "FED",
         title: "Federal Reserve Event",
         event_date: date,
@@ -169,8 +169,8 @@ async function refreshMacroEvents(db: ReturnType<typeof getDb>): Promise<void> {
   }
 }
 
-async function refreshIpoEvents(db: ReturnType<typeof getDb>): Promise<void> {
-  const apiKey = process.env.ALPHA_VANTAGE_API_KEY || getSetting("alphavantage_api_key");
+async function refreshIpoEvents(): Promise<void> {
+  const apiKey = process.env.ALPHA_VANTAGE_API_KEY || (await getSettingValue("alphavantage_api_key"));
   if (!apiKey) return;
 
   try {
@@ -184,7 +184,7 @@ async function refreshIpoEvents(db: ReturnType<typeof getDb>): Promise<void> {
     for (const line of lines.slice(0, 20)) {
       const [symbol, name, ipoDate] = line.split(",");
       if (!symbol || !ipoDate) continue;
-      insertEvent(db, {
+      await insertEvent({
         event_type: "IPO",
         title: `${symbol} IPO${name ? ` - ${name}` : ""}`,
         ticker: symbol,
@@ -198,29 +198,26 @@ async function refreshIpoEvents(db: ReturnType<typeof getDb>): Promise<void> {
   }
 }
 
-async function refreshEventsIfNeeded(db: ReturnType<typeof getDb>): Promise<void> {
+async function refreshEventsIfNeeded(): Promise<void> {
   const ttlHours = 6;
-  const setting = db.prepare("SELECT value FROM app_settings WHERE key = 'market_events_refreshed_at'").get() as { value: string } | undefined;
-  const lastRefresh = setting?.value ? new Date(setting.value).getTime() : 0;
+  const setting = await getSettingValue("market_events_refreshed_at");
+  const lastRefresh = setting ? new Date(setting).getTime() : 0;
   if (lastRefresh && Date.now() - lastRefresh < ttlHours * 3600000) return;
 
-  const tickers = db.prepare(`
+  const tickers = await queryRows<{ ticker: string }>(`
     SELECT DISTINCT ticker FROM stocks
     UNION
     SELECT DISTINCT ticker FROM watchlist
     UNION
     SELECT DISTINCT ticker FROM portfolio
     ORDER BY ticker ASC
-  `).all() as Array<{ ticker: string }>;
+  `);
 
-  await refreshTickerEvents(db, tickers.map((row) => row.ticker));
-  await refreshMacroEvents(db);
-  await refreshIpoEvents(db);
+  await refreshTickerEvents(tickers.map((row) => row.ticker));
+  await refreshMacroEvents();
+  await refreshIpoEvents();
 
-  db.prepare(`
-    INSERT OR REPLACE INTO app_settings (key, value, updated_at)
-    VALUES ('market_events_refreshed_at', ?, datetime('now'))
-  `).run(new Date().toISOString());
+  await upsertSetting("market_events_refreshed_at", new Date().toISOString());
 }
 
 function bucketize(events: Array<Record<string, unknown>>) {
@@ -243,15 +240,14 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = getDb();
-  await refreshEventsIfNeeded(db);
+  await refreshEventsIfNeeded();
 
-  const events = db.prepare(`
+  const events = await queryRows(`
     SELECT * FROM market_events
     WHERE event_date >= datetime('now', '-1 day')
     ORDER BY event_date ASC, event_type ASC
     LIMIT 250
-  `).all();
+  `);
 
   return NextResponse.json({
     buckets: bucketize(events as Array<Record<string, unknown>>),

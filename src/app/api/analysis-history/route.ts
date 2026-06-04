@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getDb } from "@/lib/db";
+import { queryRows } from "@/lib/postgres-access";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -9,15 +9,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const ticker = searchParams.get("ticker");
   const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 250);
-  const db = getDb();
 
   const rows = ticker
-    ? db.prepare(`
+    ? await queryRows(`
         SELECT * FROM analysis_history WHERE ticker = ? ORDER BY created_at DESC LIMIT ?
-      `).all(ticker.toUpperCase(), limit)
-    : db.prepare(`
+      `, [ticker.toUpperCase(), limit])
+    : await queryRows(`
         SELECT * FROM analysis_history ORDER BY created_at DESC LIMIT ?
-      `).all(limit);
+      `, [limit]);
 
   return NextResponse.json(rows);
 }

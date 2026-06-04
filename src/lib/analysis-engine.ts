@@ -1,4 +1,3 @@
-import { getSetting } from "./db";
 import { fetchPrice, fetchHistoricalData, fetchNews } from "./data-fetcher";
 import { calculateTechnicals, type OHLCV } from "./technicals";
 import { calculateStockScore, type StockScoreResult } from "./stock-scoring";

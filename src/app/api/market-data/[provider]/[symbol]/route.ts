@@ -44,7 +44,7 @@ export async function GET(
   try {
     if (resource === "news") {
       const news = await getNewsFromSource(provider, symbol);
-      logIntegrationActivity({
+      await logIntegrationActivity({
         integration: provider,
         action: "news_fetch",
         symbol,
@@ -58,7 +58,7 @@ export async function GET(
 
     if (resource === "history") {
       const history = await getHistoryFromSource(provider, symbol, Number.isFinite(days) ? days : 30);
-      logIntegrationActivity({
+      await logIntegrationActivity({
         integration: provider,
         action: "history_fetch",
         symbol,
@@ -75,7 +75,7 @@ export async function GET(
       return NextResponse.json({ error: "No quote data returned" }, { status: 404 });
     }
 
-    logIntegrationActivity({
+    await logIntegrationActivity({
       integration: provider,
       action: "quote_fetch",
       symbol,
@@ -86,7 +86,7 @@ export async function GET(
     });
     return NextResponse.json({ provider, symbol, resource: "quote", data: quote });
   } catch (error) {
-    logIntegrationActivity({
+    await logIntegrationActivity({
       integration: provider,
       action: `${resource}_fetch`,
       symbol,

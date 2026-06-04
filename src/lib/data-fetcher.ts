@@ -1,4 +1,3 @@
-import { getDb } from "./db";
 import {
   getFirstAvailableHistory,
   getFirstAvailableNews,
@@ -17,8 +16,6 @@ import {
 import { aggregateNewsSentiment, analyzeNewsArticle, type AggregatedSentimentResult } from "./news-sentiment";
 
 async function saveNewsArticles(ticker: string, articles: NewsArticle[]): Promise<AggregatedSentimentResult> {
-  const db = getDb();
-
   for (const article of articles) {
     const sentiment = analyzeNewsArticle({
       headline: article.headline,

@@ -35,7 +35,7 @@ export async function GET(
       throw new Error("No quote data returned");
     }
 
-    logIntegrationActivity({
+    await logIntegrationActivity({
       integration: "twelvedata",
       action: "quote_fetch",
       symbol: normalizedSymbol,
@@ -47,7 +47,7 @@ export async function GET(
 
     return NextResponse.json({ symbol: normalizedSymbol, resource: "quote", data: quote });
   } catch (error) {
-    logIntegrationActivity({
+    await logIntegrationActivity({
       integration: "twelvedata",
       action: "quote_fetch",
       symbol: normalizedSymbol,
@@ -63,4 +63,3 @@ export async function GET(
     );
   }
 }
-

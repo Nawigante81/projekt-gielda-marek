@@ -29,7 +29,7 @@ export async function GET(
   try {
     if (resource === "news") {
       const news = await fetchFinnhubNews(normalizedSymbol, Number.isFinite(days) ? days : 7);
-      logIntegrationActivity({
+      await logIntegrationActivity({
         integration: "finnhub",
         action: "news_fetch",
         symbol: normalizedSymbol,
@@ -42,7 +42,7 @@ export async function GET(
     }
 
     const quote = await fetchFinnhubQuote(normalizedSymbol);
-    logIntegrationActivity({
+    await logIntegrationActivity({
       integration: "finnhub",
       action: "quote_fetch",
       symbol: normalizedSymbol,
@@ -53,7 +53,7 @@ export async function GET(
     });
     return NextResponse.json({ symbol: normalizedSymbol, resource: "quote", data: quote });
   } catch (error) {
-    logIntegrationActivity({
+    await logIntegrationActivity({
       integration: "finnhub",
       action: `${resource}_fetch`,
       symbol: normalizedSymbol,

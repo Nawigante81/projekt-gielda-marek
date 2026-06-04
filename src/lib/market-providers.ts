@@ -1,5 +1,3 @@
-import { getSetting } from "./db";
-
 export type MarketDataSource = "finnhub" | "twelvedata" | "alphavantage" | "yahoo";
 
 export interface PriceData {
@@ -40,8 +38,13 @@ export interface MarketProvider {
 
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 
+function getEnvSetting(key: string): string | null {
+  return process.env[key] || null;
+}
+
 function getNumericSetting(key: string, fallback: number): number {
-  const value = parseInt(getSetting(key) || "", 10);
+  const envKey = key.toUpperCase();
+  const value = parseInt(getEnvSetting(envKey) || "", 10);
   return Number.isFinite(value) ? value : fallback;
 }
 
@@ -141,15 +144,15 @@ function parseGoogleNewsFeed(xml: string): NewsArticle[] {
 }
 
 function getFinnhubApiKey(): string | null {
-  return process.env.FINNHUB_API_KEY || getSetting("finnhub_api_key") || null;
+  return process.env.FINNHUB_API_KEY || null;
 }
 
 function getTwelveDataApiKey(): string | null {
-  return process.env.TWELVEDATA_API_KEY || getSetting("twelvedata_api_key") || null;
+  return process.env.TWELVEDATA_API_KEY || null;
 }
 
 function getAlphaVantageApiKey(): string | null {
-  return process.env.ALPHA_VANTAGE_API_KEY || getSetting("alphavantage_api_key") || null;
+  return process.env.ALPHA_VANTAGE_API_KEY || null;
 }
 
 type TwelveDataQuoteResponse = {
@@ -461,9 +464,9 @@ export function normalizeMarketDataSource(source: string | null | undefined): Ma
 }
 
 export function getMarketSourceOrder(): MarketDataSource[] {
-  const primarySource = normalizeMarketDataSource(getSetting("data_source_primary") || "finnhub");
-  const secondarySource = normalizeMarketDataSource(getSetting("data_source_secondary") || "alphavantage");
-  const fallbackSource = normalizeMarketDataSource(getSetting("data_source_fallback") || "yfinance");
+  const primarySource = normalizeMarketDataSource(process.env.DATA_SOURCE_PRIMARY || "finnhub");
+  const secondarySource = normalizeMarketDataSource(process.env.DATA_SOURCE_SECONDARY || "alphavantage");
+  const fallbackSource = normalizeMarketDataSource(process.env.DATA_SOURCE_FALLBACK || "yahoo");
 
   return Array.from(new Set<MarketDataSource>([
     primarySource,
@@ -523,4 +526,3 @@ export async function getFirstAvailableHistory(ticker: string, days: number): Pr
   }
   return [];
 }
-

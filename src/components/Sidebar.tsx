@@ -14,6 +14,9 @@ import {
   Activity,
   AlertTriangle,
   MessagesSquare,
+  Newspaper,
+  FileSearch,
+  CalendarDays,
   X,
 } from "lucide-react";
 
@@ -30,6 +33,9 @@ const navItems: NavItem[] = [
   { id: "market", label: "Rynek / Indeksy", icon: <BarChart2 size={16} /> },
   { id: "technicals", label: "Sygnały", icon: <Activity size={16} /> },
   { id: "scanner", label: "Skaner okazji", icon: <Search size={16} /> },
+  { id: "news", label: "Newsy", icon: <Newspaper size={16} /> },
+  { id: "sec", label: "SEC / raporty", icon: <FileSearch size={16} /> },
+  { id: "earnings", label: "Earnings", icon: <CalendarDays size={16} /> },
   { id: "chat", label: "AI Chat", icon: <MessagesSquare size={16} /> },
   { id: "alerts", label: "Alerty", icon: <Bell size={16} /> },
   { id: "reports", label: "Raporty AI", icon: <FileText size={16} /> },

@@ -75,6 +75,8 @@ VALUES
   ('new_ath', 'Nowe ATH', 'Nowe roczne maksimum', NULL),
   ('new_atl', 'Nowe ATL', 'Nowe roczne minimum', NULL),
   ('gap_up', 'Gap Up', 'Otwarcie powyzej poprzedniego high', NULL),
-  ('gap_down', 'Gap Down', 'Otwarcie ponizej poprzedniego low', NULL)
+  ('gap_down', 'Gap Down', 'Otwarcie ponizej poprzedniego low', NULL),
+  ('sec_recent_filing', 'Nowy filing SEC', 'Alert przy swiezym raporcie SEC 10-K, 10-Q, 8-K lub Form 4', NULL),
+  ('earnings_upcoming', 'Nadchodzace wyniki', 'Alert przed publikacja wynikow kwartalnych', NULL)
 ON CONFLICT (rule_key)
 DO NOTHING;

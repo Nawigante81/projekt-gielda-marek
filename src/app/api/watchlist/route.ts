@@ -6,6 +6,14 @@ function validateTicker(ticker: string): boolean {
   return /^[A-Z0-9.\-\^]{1,10}$/.test(ticker.toUpperCase());
 }
 
+const VALID_OPPORTUNITY_TYPES = new Set([
+  "observed",
+  "opportunity",
+  "high_volume",
+  "after_earnings",
+  "unusual_move",
+]);
+
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -69,9 +77,13 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { ticker, company_name, notes, group_name, watchlist_id, auto_analyze } = body;
+  const opportunityType = String(body.opportunity_type || "observed");
 
   if (!ticker || !validateTicker(ticker)) {
     return NextResponse.json({ error: "Nieprawidłowy ticker" }, { status: 400 });
+  }
+  if (!VALID_OPPORTUNITY_TYPES.has(opportunityType)) {
+    return NextResponse.json({ error: "Nieprawidłowy typ obserwacji" }, { status: 400 });
   }
 
   try {
@@ -82,15 +94,16 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await runSql(`
-      INSERT INTO watchlist (ticker, company_name, notes, group_name, watchlist_id, auto_analyze, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      INSERT INTO watchlist (ticker, company_name, notes, group_name, watchlist_id, auto_analyze, opportunity_type, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `, [
       ticker.toUpperCase(),
       company_name || "",
       notes || "",
       (group_name || "TECH").toUpperCase(),
       resolvedWatchlistId,
-      auto_analyze === false ? 0 : 1
+      auto_analyze === false ? 0 : 1,
+      opportunityType
     ]);
     return NextResponse.json({ id: result.lastInsertId ?? null, success: true });
   } catch {

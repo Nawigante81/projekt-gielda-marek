@@ -91,6 +91,9 @@ function initSchema(db: Database.Database) {
       shares REAL NOT NULL DEFAULT 0,
       purchase_price REAL NOT NULL DEFAULT 0,
       purchase_date TEXT,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      alert_threshold REAL,
+      status TEXT NOT NULL DEFAULT 'owned',
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -364,6 +367,23 @@ function initSchema(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS sec_filings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker TEXT NOT NULL,
+      cik TEXT NOT NULL,
+      company_name TEXT,
+      form TEXT NOT NULL,
+      accession_number TEXT NOT NULL,
+      filing_date TEXT NOT NULL,
+      report_date TEXT,
+      primary_document TEXT,
+      filing_url TEXT,
+      source TEXT NOT NULL DEFAULT 'sec',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(ticker, accession_number, form)
+    );
+
     CREATE TABLE IF NOT EXISTS ai_chat_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,
@@ -419,12 +439,19 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_recommendations_ticker ON recommendations(ticker);
     CREATE INDEX IF NOT EXISTS idx_market_events_date ON market_events(event_date);
     CREATE INDEX IF NOT EXISTS idx_sentiment_ticker ON sentiment(ticker);
+    CREATE INDEX IF NOT EXISTS idx_sec_filings_ticker ON sec_filings(ticker);
+    CREATE INDEX IF NOT EXISTS idx_sec_filings_filing_date ON sec_filings(filing_date);
+    CREATE INDEX IF NOT EXISTS idx_sec_filings_form ON sec_filings(form);
   `);
 
   ensureColumn(db, "watchlist", "watchlist_id", "INTEGER REFERENCES watchlists(id) ON DELETE SET NULL");
   ensureColumn(db, "watchlist", "group_name", "TEXT DEFAULT 'TECH'");
   ensureColumn(db, "watchlist", "auto_analyze", "INTEGER DEFAULT 1");
+  ensureColumn(db, "watchlist", "opportunity_type", "TEXT NOT NULL DEFAULT 'observed'");
   ensureColumn(db, "watchlist", "updated_at", "TEXT DEFAULT (datetime('now'))");
+  ensureColumn(db, "portfolio", "currency", "TEXT NOT NULL DEFAULT 'USD'");
+  ensureColumn(db, "portfolio", "alert_threshold", "REAL");
+  ensureColumn(db, "portfolio", "status", "TEXT NOT NULL DEFAULT 'owned'");
   ensureColumn(db, "alerts", "rule_key", "TEXT");
   ensureColumn(db, "alerts", "is_enabled", "INTEGER DEFAULT 1");
   ensureColumn(db, "alerts", "metadata_json", "TEXT");
@@ -467,7 +494,9 @@ function initSchema(db: Database.Database) {
       ('new_ath', 'Nowe ATH', 'Nowe roczne maksimum', NULL),
       ('new_atl', 'Nowe ATL', 'Nowe roczne minimum', NULL),
       ('gap_up', 'Gap Up', 'Otwarcie powyżej poprzedniego high', NULL),
-      ('gap_down', 'Gap Down', 'Otwarcie poniżej poprzedniego low', NULL);
+      ('gap_down', 'Gap Down', 'Otwarcie poniżej poprzedniego low', NULL),
+      ('sec_recent_filing', 'Nowy filing SEC', 'Alert przy świeżym raporcie SEC 10-K, 10-Q, 8-K lub Form 4', NULL),
+      ('earnings_upcoming', 'Nadchodzące wyniki', 'Alert przed publikacją wyników kwartalnych', NULL);
   `);
 
   db.prepare(`

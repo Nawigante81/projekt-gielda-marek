@@ -6,6 +6,15 @@ function validateTicker(ticker: string): boolean {
   return /^[A-Z0-9.\-\^]{1,10}$/.test(ticker.toUpperCase());
 }
 
+const VALID_CURRENCIES = new Set(["USD", "EUR", "PLN", "GBP"]);
+const VALID_STATUSES = new Set(["observed", "owned", "sold"]);
+
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -64,7 +73,12 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { ticker, company_name, shares, purchase_price, purchase_date, notes } = body;
+  const { ticker, company_name, purchase_date, notes } = body;
+  const shares = toNumber(body.shares);
+  const purchasePrice = toNumber(body.purchase_price);
+  const alertThreshold = toNumber(body.alert_threshold);
+  const currency = String(body.currency || "USD").toUpperCase();
+  const status = String(body.status || "owned");
 
   if (!ticker || !validateTicker(ticker)) {
     return NextResponse.json({ error: "Nieprawidłowy ticker" }, { status: 400 });
@@ -72,20 +86,32 @@ export async function POST(req: NextRequest) {
   if (!shares || shares <= 0) {
     return NextResponse.json({ error: "Nieprawidłowa ilość akcji" }, { status: 400 });
   }
-  if (!purchase_price || purchase_price <= 0) {
+  if (!purchasePrice || purchasePrice <= 0) {
     return NextResponse.json({ error: "Nieprawidłowa cena zakupu" }, { status: 400 });
+  }
+  if (!VALID_CURRENCIES.has(currency)) {
+    return NextResponse.json({ error: "Nieprawidłowa waluta" }, { status: 400 });
+  }
+  if (!VALID_STATUSES.has(status)) {
+    return NextResponse.json({ error: "Nieprawidłowy status pozycji" }, { status: 400 });
+  }
+  if (alertThreshold !== null && alertThreshold <= 0) {
+    return NextResponse.json({ error: "Próg alertu musi być większy od zera" }, { status: 400 });
   }
 
   const result = await runSql(`
-    INSERT INTO portfolio (ticker, company_name, shares, purchase_price, purchase_date, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO portfolio (ticker, company_name, shares, purchase_price, purchase_date, currency, alert_threshold, status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ${process.env.DATABASE_PROVIDER === "postgres" ? "RETURNING id" : ""}
   `, [
     ticker.toUpperCase(),
     company_name || "",
     shares,
-    purchase_price,
+    purchasePrice,
     purchase_date || new Date().toISOString().split("T")[0],
+    currency,
+    alertThreshold,
+    status,
     notes || ""
   ]);
 

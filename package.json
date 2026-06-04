@@ -20,7 +20,8 @@
     "migrate:postgres": "tsx scripts/migrate-postgres.ts",
     "setup:postgres": "tsx scripts/setup-postgres.ts",
     "import:sqlite-to-postgres": "tsx scripts/import-sqlite-to-postgres.ts",
-    "smoke-test:postgres": "tsx scripts/smoke-test-postgres.ts"
+    "smoke-test:postgres": "tsx scripts/smoke-test-postgres.ts",
+    "worker:analysis": "tsx scripts/analysis-worker.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",

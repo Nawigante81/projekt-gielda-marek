@@ -14,6 +14,9 @@ interface PortfolioItem {
   shares: number;
   purchase_price: number;
   purchase_date: string;
+  currency: "USD" | "EUR" | "PLN" | "GBP";
+  alert_threshold: number | null;
+  status: "observed" | "owned" | "sold";
   notes: string;
   current_price: number | null;
   change_pct: number | null;
@@ -31,12 +34,32 @@ interface FormData {
   shares: string;
   purchase_price: string;
   purchase_date: string;
+  currency: "USD" | "EUR" | "PLN" | "GBP";
+  alert_threshold: string;
+  status: "observed" | "owned" | "sold";
   notes: string;
 }
 
 const emptyForm: FormData = {
   ticker: "", company_name: "", shares: "", purchase_price: "",
-  purchase_date: new Date().toISOString().split("T")[0], notes: "",
+  purchase_date: new Date().toISOString().split("T")[0],
+  currency: "USD",
+  alert_threshold: "",
+  status: "owned",
+  notes: "",
+};
+
+const statusLabels: Record<PortfolioItem["status"], string> = {
+  observed: "Obserwowane",
+  owned: "Posiadane",
+  sold: "Sprzedane",
+};
+
+const currencySymbols: Record<PortfolioItem["currency"], string> = {
+  USD: "$",
+  EUR: "€",
+  PLN: "zł",
+  GBP: "£",
 };
 
 export default function Portfolio() {
@@ -67,6 +90,9 @@ export default function Portfolio() {
       shares: String(item.shares),
       purchase_price: String(item.purchase_price),
       purchase_date: item.purchase_date || "",
+      currency: item.currency || "USD",
+      alert_threshold: item.alert_threshold ? String(item.alert_threshold) : "",
+      status: item.status || "owned",
       notes: item.notes || "",
     });
     setEditItem(item);
@@ -91,6 +117,9 @@ export default function Portfolio() {
           shares: parseFloat(form.shares),
           purchase_price: parseFloat(form.purchase_price),
           purchase_date: form.purchase_date,
+          currency: form.currency,
+          alert_threshold: form.alert_threshold ? parseFloat(form.alert_threshold) : null,
+          status: form.status,
           notes: form.notes,
         }),
       });
@@ -116,7 +145,8 @@ export default function Portfolio() {
     }
   };
 
-  const totalValue = items.reduce((s, i) => s + (i.current_price || i.purchase_price) * i.shares, 0);
+  const activeItems = items.filter((item) => item.status !== "sold");
+  const totalValue = activeItems.reduce((s, i) => s + (i.current_price || i.purchase_price) * i.shares, 0);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-blue-500" size={24} /></div>;
@@ -129,7 +159,7 @@ export default function Portfolio() {
           <h1 className="text-xl font-semibold text-white flex items-center gap-2">
             <TrendingUp size={18} className="text-blue-400" /> Portfolio
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">{items.length} pozycji • Wartość: ${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{items.length} pozycji • Aktywna wartość: ${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
         <button
           onClick={openAdd}
@@ -181,7 +211,7 @@ export default function Portfolio() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Cena zakupu ($) *</label>
+                  <label className="block text-xs text-slate-400 mb-1">Cena zakupu *</label>
                   <input
                     type="number" step="0.01" min="0"
                     className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
@@ -189,6 +219,43 @@ export default function Portfolio() {
                     value={form.purchase_price}
                     onChange={e => setForm(f => ({ ...f, purchase_price: e.target.value }))}
                   />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Waluta</label>
+                  <select
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={form.currency}
+                    onChange={e => setForm(f => ({ ...f, currency: e.target.value as FormData["currency"] }))}
+                  >
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="PLN">PLN</option>
+                    <option value="GBP">GBP</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Próg alertu</label>
+                  <input
+                    type="number" step="0.01" min="0"
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                    placeholder="180.00"
+                    value={form.alert_threshold}
+                    onChange={e => setForm(f => ({ ...f, alert_threshold: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Status</label>
+                  <select
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={form.status}
+                    onChange={e => setForm(f => ({ ...f, status: e.target.value as FormData["status"] }))}
+                  >
+                    <option value="observed">Obserwowane</option>
+                    <option value="owned">Posiadane</option>
+                    <option value="sold">Sprzedane</option>
+                  </select>
                 </div>
               </div>
               <div>
@@ -233,6 +300,7 @@ export default function Portfolio() {
           <thead>
             <tr className="border-b border-slate-800">
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Ticker</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Status</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Akcje</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Cena zakupu</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Cena aktualna</th>
@@ -251,6 +319,7 @@ export default function Portfolio() {
               const pnl = (currentPrice - item.purchase_price) * item.shares;
               const pnlPct = ((currentPrice - item.purchase_price) / item.purchase_price) * 100;
               const portShare = totalValue > 0 ? (posValue / totalValue) * 100 : 0;
+              const currencySymbol = currencySymbols[item.currency] || item.currency;
 
               return (
                 <tr key={item.id} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
@@ -263,24 +332,36 @@ export default function Portfolio() {
                       <div className="text-[10px] text-slate-500">{item.company_name}</div>
                     </button>
                   </td>
+                  <td className="px-4 py-3">
+                    <div className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${
+                      item.status === "owned" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" :
+                      item.status === "sold" ? "border-slate-600 bg-slate-800 text-slate-400" :
+                      "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                    }`}>
+                      {statusLabels[item.status] || item.status}
+                    </div>
+                    {item.alert_threshold ? (
+                      <div className="mt-1 text-[10px] text-amber-400">Alert: {currencySymbol}{item.alert_threshold.toFixed(2)}</div>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3 text-right font-mono text-sm text-slate-300">{item.shares}</td>
-                  <td className="px-4 py-3 text-right font-mono text-sm text-slate-400">${item.purchase_price.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-sm text-slate-400">{currencySymbol}{item.purchase_price.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right font-mono text-sm text-white">
-                    {item.current_price ? `$${item.current_price.toFixed(2)}` : "—"}
+                    {item.current_price ? `${currencySymbol}${item.current_price.toFixed(2)}` : "—"}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <PriceChange value={item.change_pct} className="text-xs" />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className={`font-mono text-sm ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {pnl >= 0 ? "+" : ""}${Math.abs(pnl).toFixed(2)}
+                      {pnl >= 0 ? "+" : ""}{currencySymbol}{Math.abs(pnl).toFixed(2)}
                     </div>
                     <div className={`text-[10px] ${pnlPct >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="font-mono text-sm text-slate-300">${posValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div className="font-mono text-sm text-slate-300">{currencySymbol}{posValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     <div className="text-[10px] text-slate-600">{portShare.toFixed(1)}% portfela</div>
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -310,7 +391,7 @@ export default function Portfolio() {
             })}
             {items.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-slate-600">
+                <td colSpan={11} className="px-4 py-12 text-center text-slate-600">
                   <TrendingUp size={32} className="mx-auto mb-2 opacity-30" />
                   <div className="text-sm">Portfolio jest puste. Dodaj pierwszą pozycję.</div>
                 </td>

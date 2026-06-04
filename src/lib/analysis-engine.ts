@@ -613,11 +613,15 @@ async function generateAIReport(
   const portfolioContext = buildPortfolioContext(portfolio, priceResults, technicalResults, scoreResults);
   const watchlistContext = buildWatchlistContext(watchlist, priceResults, technicalResults, scoreResults);
   const alertsContext = await buildAlertsContext();
+  const secContext = await buildSecContext([...portfolio, ...watchlist].map((item) => item.ticker));
+  const earningsContext = await buildEarningsContext([...portfolio, ...watchlist].map((item) => item.ticker));
 
   const systemPrompt = `Jesteś analitykiem technicznym rynku akcji USA. Analizujesz dane i tworzysz KRÓTKIE, TECHNICZNE raporty w języku polskim. 
 NIE jesteś doradcą inwestycyjnym - nie piszesz "kup", "sprzedaj", "gwarantowany zysk". 
 Piszesz o sygnałach, ryzyku, kontekście i możliwych scenariuszach.
 Raport ma być zwięzły, konkretny, bez lania wody.`;
+
+  const reportTitle = reportType === "scheduled" ? "RAPORT WALL STREET — 22:15" : "RAPORT WALL STREET";
 
   const userPrompt = `Stwórz krótki raport analizy technicznej na podstawie poniższych danych:
 
@@ -633,13 +637,22 @@ ${watchlistContext}
 ## ALERTY
 ${alertsContext}
 
+## SEC / RAPORTY
+${secContext}
+
+## EARNINGS CALENDAR
+${earningsContext}
+
 Raport musi zawierać:
+0. Nagłówek dokładnie: ${reportTitle}
 1. Ogólna sytuacja rynkowa (2-3 zdania)
 2. Sentyment: risk-on / risk-off / neutral i dlaczego
 3. Portfolio - które pozycje mocne, które ryzykowne
 4. Watchlista - co warte uwagi
 5. Kluczowe alerty techniczne
-6. Podsumowanie dnia (1-2 zdania)
+6. SEC / raporty - świeże 10-K, 10-Q, 8-K lub insider filings, jeśli występują
+7. Earnings calendar - najbliższe wyniki dla portfolio/watchlisty
+8. Podsumowanie dnia (1-2 zdania)
 
 Format: zwięzły, techniczny, bez zbędnych ozdobników.`;
 
@@ -684,8 +697,15 @@ Format: zwięzły, techniczny, bez zbędnych ozdobników.`;
       marketContext,
       portfolioContext,
       watchlistContext,
-      alertsContext
+      alertsContext,
+      secContext,
+      earningsContext,
+      reportTitle
     );
+  }
+
+  if (!reportContent.includes(reportTitle)) {
+    reportContent = `# ${reportTitle}\n\n${reportContent}`;
   }
 
   // Determine sentiment from market data
@@ -779,14 +799,82 @@ async function buildAlertsContext(): Promise<string> {
   return alerts.map((a) => `[${a.severity.toUpperCase()}] ${a.message}`).join("\n");
 }
 
+async function buildSecContext(tickers: string[]): Promise<string> {
+  const uniqueTickers = [...new Set(tickers.filter(Boolean))];
+  if (uniqueTickers.length === 0) return "Brak tickerów do sprawdzenia SEC.";
+
+  const placeholders = uniqueTickers.map(() => "?").join(", ");
+  const filings = await queryRows<{
+    ticker: string;
+    form: string;
+    filing_date: string;
+    report_date: string | null;
+    filing_url: string | null;
+  }>(
+    `SELECT ticker, form, filing_date, report_date, filing_url
+     FROM sec_filings
+     WHERE ticker IN (${placeholders})
+     ORDER BY filing_date DESC, id DESC
+     LIMIT 15`,
+    uniqueTickers
+  );
+
+  if (filings.length === 0) {
+    return "Brak pobranych filingów SEC dla spółek z portfolio/watchlisty. Użyj widoku SEC / raporty, aby pobrać dane.";
+  }
+
+  const now = Date.now();
+  return filings
+    .map((filing) => {
+      const filingTime = new Date(filing.filing_date).getTime();
+      const ageDays = Number.isFinite(filingTime)
+        ? Math.max(0, Math.round((now - filingTime) / (24 * 60 * 60 * 1000)))
+        : null;
+      const freshness = ageDays !== null && ageDays <= 7 ? "ŚWIEŻE" : "starsze";
+      return `${filing.ticker}: ${filing.form}, filing ${filing.filing_date}, report ${filing.report_date || "N/A"}, ${freshness}${ageDays !== null ? ` (${ageDays} dni)` : ""}`;
+    })
+    .join("\n");
+}
+
+async function buildEarningsContext(tickers: string[]): Promise<string> {
+  const uniqueTickers = [...new Set(tickers.filter(Boolean))];
+  if (uniqueTickers.length === 0) return "Brak tickerów do sprawdzenia earnings.";
+
+  const placeholders = uniqueTickers.map(() => "?").join(", ");
+  const events = await queryRows<{
+    ticker: string | null;
+    title: string;
+    event_date: string;
+    source: string | null;
+  }>(
+    `SELECT ticker, title, event_date, source
+     FROM market_events
+     WHERE event_type = 'earnings'
+       AND ticker IN (${placeholders})
+       AND event_date >= ?
+     ORDER BY event_date ASC
+     LIMIT 20`,
+    [...uniqueTickers, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()]
+  );
+
+  if (events.length === 0) {
+    return "Brak nadchodzących earnings dla spółek z portfolio/watchlisty.";
+  }
+
+  return events.map((event) => `${event.ticker}: ${event.title}, data ${event.event_date}, źródło ${event.source || "N/A"}`).join("\n");
+}
+
 function generateFallbackReport(
   marketContext: string,
   portfolioContext: string,
   watchlistContext: string,
-  alertsContext: string
+  alertsContext: string,
+  secContext: string,
+  earningsContext: string,
+  reportTitle: string
 ): string {
   const now = new Date().toLocaleString("pl-PL", { timeZone: "America/New_York" });
-  return `## Raport Analizy Technicznej
+  return `# ${reportTitle}
 *Wygenerowano: ${now} ET*
 
 ### Sytuacja Rynkowa
@@ -800,6 +888,12 @@ ${watchlistContext}
 
 ### Alerty
 ${alertsContext}
+
+### SEC / Raporty
+${secContext}
+
+### Earnings calendar
+${earningsContext}
 
 ---
 *Raport wygenerowany automatycznie (tryb bez AI). Skonfiguruj klucz OpenAI API dla pełnej analizy AI.*

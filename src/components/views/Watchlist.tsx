@@ -17,6 +17,7 @@ interface WatchlistItem {
   watchlist_name: string | null;
   watchlist_color: string | null;
   auto_analyze: number;
+  opportunity_type: OpportunityType;
   current_price: number | null;
   change_pct: number | null;
   volume: number | null;
@@ -39,14 +40,41 @@ interface WatchlistGroup {
   ticker_count: number;
 }
 
+type OpportunityType = "observed" | "opportunity" | "high_volume" | "after_earnings" | "unusual_move";
+
+const opportunityLabels: Record<OpportunityType, string> = {
+  observed: "Obserwowane",
+  opportunity: "Potencjalna okazja",
+  high_volume: "Wysoki wolumen",
+  after_earnings: "Po wynikach",
+  unusual_move: "Nietypowy ruch",
+};
+
+const opportunityStyles: Record<OpportunityType, string> = {
+  observed: "border-slate-700 bg-slate-900/70 text-slate-300",
+  opportunity: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+  high_volume: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+  after_earnings: "border-blue-500/30 bg-blue-500/10 text-blue-400",
+  unusual_move: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300",
+};
+
 export default function Watchlist() {
   const { setSelectedTicker, setActiveView } = useAppStore();
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [groups, setGroups] = useState<WatchlistGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ ticker: "", company_name: "", notes: "", group_name: "TECH", watchlist_id: "", auto_analyze: true });
+  const [form, setForm] = useState({
+    ticker: "",
+    company_name: "",
+    notes: "",
+    group_name: "TECH",
+    watchlist_id: "",
+    auto_analyze: true,
+    opportunity_type: "observed" as OpportunityType,
+  });
   const [groupFilter, setGroupFilter] = useState<string>("ALL");
+  const [typeFilter, setTypeFilter] = useState<"ALL" | OpportunityType>("ALL");
 
   const fetchWatchlist = useCallback(async () => {
     const [itemsRes, groupsRes] = await Promise.all([
@@ -72,13 +100,14 @@ export default function Watchlist() {
         group_name: form.group_name,
         watchlist_id: form.watchlist_id ? Number(form.watchlist_id) : null,
         auto_analyze: form.auto_analyze,
+        opportunity_type: form.opportunity_type,
       }),
     });
     const data = await res.json();
     if (res.ok) {
       toast.success(`${form.ticker.toUpperCase()} dodany do watchlisty`);
       setShowForm(false);
-      setForm({ ticker: "", company_name: "", notes: "", group_name: "TECH", watchlist_id: "", auto_analyze: true });
+      setForm({ ticker: "", company_name: "", notes: "", group_name: "TECH", watchlist_id: "", auto_analyze: true, opportunity_type: "observed" });
       fetchWatchlist();
     } else {
       toast.error(data.error || "Błąd dodawania");
@@ -94,7 +123,11 @@ export default function Watchlist() {
     if (res.ok) fetchWatchlist();
   };
 
-  const filteredItems = items.filter((item) => groupFilter === "ALL" ? true : (item.group_name || item.watchlist_name || "").toUpperCase() === groupFilter);
+  const filteredItems = items.filter((item) => {
+    const matchesGroup = groupFilter === "ALL" ? true : (item.group_name || item.watchlist_name || "").toUpperCase() === groupFilter;
+    const matchesType = typeFilter === "ALL" ? true : item.opportunity_type === typeFilter;
+    return matchesGroup && matchesType;
+  });
 
   const handleDelete = async (id: number, ticker: string) => {
     if (!confirm(`Usunąć ${ticker} z watchlisty?`)) return;
@@ -182,6 +215,28 @@ export default function Watchlist() {
                   Auto analiza
                 </label>
               </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Typ obserwacji</label>
+                <select
+                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  value={form.opportunity_type}
+                  onChange={e => setForm(f => ({ ...f, opportunity_type: e.target.value as OpportunityType }))}
+                >
+                  {Object.entries(opportunityLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Notatka</label>
+                <textarea
+                  rows={2}
+                  className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 resize-none"
+                  placeholder="Dlaczego obserwujemy tę spółkę?"
+                  value={form.notes}
+                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
               <div className="flex gap-2 pt-1">
                 <button onClick={handleAdd} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-medium transition-colors">
                   Dodaj
@@ -227,11 +282,31 @@ export default function Watchlist() {
         </div>
       </div>
 
+      <div className="card p-3">
+        <div className="mb-2 text-xs font-medium text-slate-400">Typ obserwacji</div>
+        <div className="flex flex-wrap gap-1">
+          {(["ALL", ...Object.keys(opportunityLabels)] as Array<"ALL" | OpportunityType>).map((type) => (
+            <button
+              key={type}
+              onClick={() => setTypeFilter(type)}
+              className={`rounded border px-2 py-1 text-xs transition-colors ${
+                typeFilter === type
+                  ? "border-blue-500/50 bg-blue-500/15 text-blue-300"
+                  : "border-slate-800 bg-slate-900/60 text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {type === "ALL" ? "Wszystkie" : opportunityLabels[type]}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="card overflow-hidden hidden md:block">
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-800">
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Ticker</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Typ</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Cena</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Zmiana %</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Wolumen</th>
@@ -254,6 +329,11 @@ export default function Watchlist() {
                     <div className="text-sm font-semibold text-white">{item.ticker}</div>
                     <div className="text-[10px] text-slate-500">{item.company_name}</div>
                   </button>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] ${opportunityStyles[item.opportunity_type] || opportunityStyles.observed}`}>
+                    {opportunityLabels[item.opportunity_type] || item.opportunity_type}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-sm text-white">
                   {item.current_price ? `$${item.current_price.toFixed(2)}` : "—"}
@@ -324,7 +404,7 @@ export default function Watchlist() {
             ))}
             {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-slate-600">
+                <td colSpan={11} className="px-4 py-12 text-center text-slate-600">
                   <Eye size={32} className="mx-auto mb-2 opacity-30" />
                   <div className="text-sm">Watchlista jest pusta. Dodaj pierwsze tickery do obserwacji.</div>
                 </td>
@@ -344,6 +424,9 @@ export default function Watchlist() {
               >
                 <div className="text-sm font-semibold text-white">{item.ticker}</div>
                 <div className="text-[11px] text-slate-500">{item.company_name}</div>
+                <div className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] ${opportunityStyles[item.opportunity_type] || opportunityStyles.observed}`}>
+                  {opportunityLabels[item.opportunity_type] || item.opportunity_type}
+                </div>
               </button>
               <SignalBadge signal={item.overall_signal} />
             </div>

@@ -5,6 +5,9 @@ import { useAppStore } from "@/store/useAppStore";
 import { Search, RefreshCw, Loader2, AlertTriangle, Zap, Eye } from "lucide-react";
 import SignalBadge from "@/components/SignalBadge";
 import PriceChange from "@/components/PriceChange";
+import toast from "react-hot-toast";
+
+type OpportunityType = "observed" | "opportunity" | "high_volume" | "after_earnings" | "unusual_move";
 
 interface ScanResult {
   ticker: string;
@@ -15,6 +18,8 @@ interface ScanResult {
   confirming_indicators: string[];
   risk_level: string;
   status: string;
+  opportunity_type: OpportunityType;
+  is_watchlisted: boolean;
   rsi: number | null;
   overall_signal: string | null;
 }
@@ -31,11 +36,20 @@ const RISK_CONFIG = {
   high: { label: "Wysokie", color: "text-red-400" },
 };
 
+const OPPORTUNITY_CONFIG: Record<OpportunityType, { label: string; style: string }> = {
+  observed: { label: "Obserwowane", style: "border-slate-700 bg-slate-900/70 text-slate-300" },
+  opportunity: { label: "Potencjalna okazja", style: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+  high_volume: { label: "Wysoki wolumen", style: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
+  after_earnings: { label: "Po wynikach", style: "border-blue-500/30 bg-blue-500/10 text-blue-400" },
+  unusual_move: { label: "Nietypowy ruch", style: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300" },
+};
+
 export default function Scanner() {
   const { setSelectedTicker, setActiveView } = useAppStore();
   const [results, setResults] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<"all" | "mocny_sygnal" | "obserwuj" | "wysokie_ryzyko">("all");
+  const [savingTicker, setSavingTicker] = useState<string | null>(null);
 
   const fetchScanner = useCallback(async () => {
     setLoading(true);
@@ -47,6 +61,26 @@ export default function Scanner() {
   useEffect(() => { fetchScanner(); }, [fetchScanner]);
 
   const filtered = results.filter(r => filterStatus === "all" || r.status === filterStatus);
+
+  const saveToWatchlist = async (ticker: string) => {
+    setSavingTicker(ticker);
+    try {
+      const res = await fetch("/api/scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Nie udało się zapisać do watchlisty");
+        return;
+      }
+      toast.success(`${ticker} zapisany w watchliście`);
+      await fetchScanner();
+    } finally {
+      setSavingTicker(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -98,6 +132,7 @@ export default function Scanner() {
           {filtered.map((result) => {
             const statusCfg = STATUS_CONFIG[result.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.obserwuj;
             const riskCfg = RISK_CONFIG[result.risk_level as keyof typeof RISK_CONFIG] || RISK_CONFIG.medium;
+            const opportunityCfg = OPPORTUNITY_CONFIG[result.opportunity_type] || OPPORTUNITY_CONFIG.observed;
 
             return (
               <div key={result.ticker} className={`card p-4 border ${statusCfg.bg} card-hover`}>
@@ -121,6 +156,9 @@ export default function Scanner() {
                       <span className="text-xs text-slate-500">
                         Ryzyko: <span className={riskCfg.color}>{riskCfg.label}</span>
                       </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] ${opportunityCfg.style}`}>
+                        {opportunityCfg.label}
+                      </span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -129,6 +167,17 @@ export default function Scanner() {
                     <div className="mt-1">
                       <SignalBadge signal={result.overall_signal} size="sm" />
                     </div>
+                    <button
+                      onClick={() => saveToWatchlist(result.ticker)}
+                      disabled={savingTicker === result.ticker}
+                      className="mt-2 rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] text-slate-300 transition-colors hover:border-blue-500/50 hover:text-blue-300 disabled:opacity-50"
+                    >
+                      {savingTicker === result.ticker
+                        ? "Zapisuję..."
+                        : result.is_watchlisted
+                          ? "Aktualizuj watchlistę"
+                          : "Dodaj do watchlisty"}
+                    </button>
                   </div>
                 </div>
 

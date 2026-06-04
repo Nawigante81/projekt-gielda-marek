@@ -66,6 +66,33 @@ services:
       retries: 3
       start_period: 40s
 
+  analysis-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-stock-analyst-analysis-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_PROVIDER: postgres
+      SQLITE_DB_PATH: /app/data/stock_analyst.db
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app_db
+      ANALYSIS_WORKER_TIMEZONE: Europe/Warsaw
+      ANALYSIS_WORKER_TIMES_PL: "16:35,18:45,22:15"
+      ANALYSIS_WORKER_SEC_REFRESH_ENABLED: "1"
+      ANALYSIS_WORKER_SEC_REFRESH_PL: "21:45"
+      ANALYSIS_WORKER_SEC_REFRESH_LIMIT: "25"
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-setup:
+        condition: service_completed_successfully
+    command: ["npm", "run", "worker:analysis"]
+    restart: unless-stopped
+
 volumes:
   app_data:
   postgres_data:

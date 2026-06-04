@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getSettingValue, queryRow, queryRows, runSql, upsertSetting } from "@/lib/postgres-access";
+import { generateUpcomingEarningsAlerts } from "@/lib/earnings";
 
 interface MarketEventRow {
   event_type: string;
@@ -241,6 +242,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await refreshEventsIfNeeded();
+  await generateUpcomingEarningsAlerts();
 
   const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const events = await queryRows(`

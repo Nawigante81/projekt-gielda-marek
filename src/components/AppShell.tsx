@@ -18,6 +18,9 @@ import TickerDetail from "@/components/views/TickerDetail";
 import Settings from "@/components/views/Settings";
 import Errors from "@/components/views/Errors";
 import Chat from "@/components/views/Chat";
+import News from "@/components/views/News";
+import SecFilings from "@/components/views/SecFilings";
+import EarningsCalendar from "@/components/views/EarningsCalendar";
 
 export default function AppShell() {
   const { user, setUser, activeView } = useAppStore();
@@ -58,6 +61,9 @@ export default function AppShell() {
       case "market": return <Market />;
       case "technicals": return <Technicals />;
       case "scanner": return <Scanner />;
+      case "news": return <News />;
+      case "sec": return <SecFilings />;
+      case "earnings": return <EarningsCalendar />;
       case "alerts": return <Alerts />;
       case "reports": return <Reports />;
       case "chat": return <Chat />;

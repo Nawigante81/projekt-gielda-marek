@@ -38,21 +38,23 @@ export default function LoginForm() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center bg-slate-950 bg-cover bg-center bg-no-repeat p-4"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-slate-950 bg-cover bg-center bg-no-repeat p-4"
       style={{
-        backgroundImage: "linear-gradient(rgba(2, 6, 23, 0.82), rgba(2, 6, 23, 0.9)), url('/ekran-logowania.png')",
+        backgroundImage: "linear-gradient(rgba(2, 6, 23, 0.84), rgba(2, 6, 23, 0.92)), url('/assets/login-background.png')",
       }}
     >
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600/20 rounded-2xl border border-blue-500/30 mb-4 backdrop-blur-sm">
-            <Activity size={28} className="text-blue-400" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.12),transparent_40%),radial-gradient(circle_at_bottom,rgba(16,185,129,0.08),transparent_45%)]" />
+      <div className="relative z-10 w-full max-w-[420px]">
+        <div className="text-center mb-6">
+          <div className="mx-auto mb-4 inline-flex items-center justify-center rounded-2xl border border-blue-500/30 bg-blue-600/15 p-3 backdrop-blur-sm">
+            <Activity size={26} className="text-emerald-400" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Analizator Giełdowy</h1>
-          <p className="text-sm text-slate-300 mt-1">Panel analizy rynku i portfela</p>
+          <h1 className="text-2xl font-semibold tracking-wide text-white">Analizator Giełdowy</h1>
+          <p className="mt-2 text-sm text-slate-300">Witaj ponownie!</p>
+          <p className="mt-1 text-sm text-slate-400">Zaloguj się do swojego konta, aby kontynuować analizę rynku.</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-700/70 bg-slate-900/80 p-6 space-y-4 shadow-2xl backdrop-blur-md">
+        <div className="rounded-[28px] border border-slate-700/60 bg-slate-900/78 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl">
           <div className="flex flex-col items-center gap-3">
             <img
               src="/logo-aplikacji.png"

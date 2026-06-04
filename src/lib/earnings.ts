@@ -1,4 +1,5 @@
 import { queryRow, queryRows, runSql } from "./postgres-access";
+import { readJsonCache, writeJsonCache } from "./snapshot-cache";
 
 export interface EarningsEventRow {
   id: number;
@@ -22,6 +23,14 @@ function daysUntil(value: string): number | null {
   return Math.ceil((eventTime - startToday) / (24 * 60 * 60 * 1000));
 }
 
+export interface EarningsCalendarSnapshot {
+  refreshedAt: string;
+  events: EarningsEventRow[];
+}
+
+const EARNINGS_CACHE_KEY = "earnings_calendar_cache";
+const EARNINGS_CACHE_TTL_MS = 30 * 60 * 1000;
+
 export async function getUpcomingEarnings(limit = 100): Promise<EarningsEventRow[]> {
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   return queryRows<EarningsEventRow>(
@@ -32,6 +41,17 @@ export async function getUpcomingEarnings(limit = 100): Promise<EarningsEventRow
      LIMIT ?`,
     [cutoff, limit]
   );
+}
+
+export async function getCachedEarningsCalendar(limit = 100): Promise<EarningsCalendarSnapshot | null> {
+  return readJsonCache<EarningsCalendarSnapshot>(EARNINGS_CACHE_KEY, EARNINGS_CACHE_TTL_MS);
+}
+
+export async function setCachedEarningsCalendar(events: EarningsEventRow[]): Promise<void> {
+  await writeJsonCache<EarningsCalendarSnapshot>(EARNINGS_CACHE_KEY, {
+    refreshedAt: new Date().toISOString(),
+    events,
+  });
 }
 
 export async function generateUpcomingEarningsAlerts(): Promise<number> {

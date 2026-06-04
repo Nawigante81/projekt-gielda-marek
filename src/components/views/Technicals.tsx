@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Fragment } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { Activity, Loader2 } from "lucide-react";
 import SignalBadge, { IndividualSignal } from "@/components/SignalBadge";
+import TrendLabel from "@/components/TrendLabel";
 
 interface TechData {
   ticker: string;
@@ -211,7 +212,12 @@ export default function Technicals() {
                       <div className="text-[10px] text-slate-600">{item.company_name}</div>
                     </td>
                     <td className="px-2 py-3 text-center">
-                      {t ? <SignalBadge signal={t.overall_signal} /> : <span className="text-slate-700 text-xs">brak danych</span>}
+                      {t ? (
+                        <div className="flex flex-col items-center gap-1">
+                          <SignalBadge signal={t.overall_signal} />
+                          <TrendLabel signal={t.overall_signal} />
+                        </div>
+                      ) : <span className="text-slate-700 text-xs">brak danych</span>}
                     </td>
                     {["signal_sma", "signal_ema", "signal_macd", "signal_rsi", "signal_bb", "signal_stoch", "signal_adx"].map(field => (
                       <td key={field} className="px-2 py-3 text-center">

@@ -200,6 +200,16 @@ CREATE TABLE IF NOT EXISTS ai_reports (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS market_sentiment_history (
+  id BIGSERIAL PRIMARY KEY,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  fear_greed_score NUMERIC,
+  put_call_ratio NUMERIC,
+  fear_greed_label TEXT,
+  vix_value NUMERIC,
+  breadth_score NUMERIC
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id BIGSERIAL PRIMARY KEY,
   ticker TEXT NOT NULL,

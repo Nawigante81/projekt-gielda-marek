@@ -127,7 +127,15 @@ export default function AppShell() {
           },
         }}
       />
-      <div className="flex min-h-screen bg-slate-950">
+      <div className="relative min-h-screen overflow-hidden bg-slate-950">
+        <div
+          className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat opacity-50"
+          style={{
+            backgroundImage: "linear-gradient(rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.86)), url('/assets/app-bg.png')",
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.08),transparent_35%),radial-gradient(circle_at_bottom,rgba(16,185,129,0.04),transparent_40%)]" />
+        <div className="relative z-10 flex min-h-screen">
         <Sidebar
           onLogout={handleLogout}
           mobileOpen={mobileMenuOpen}
@@ -154,6 +162,7 @@ export default function AppShell() {
             {renderView()}
           </div>
         </main>
+        </div>
       </div>
     </>
   );

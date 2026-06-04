@@ -312,7 +312,7 @@ export async function upsertTechnicalIndicators(
         .filter((column) => column !== "ticker")
         .map((column) => payload[column] ?? null),
     ];
-    const placeholders = insertColumns.map((_, index) => `$${index + 1}`);
+    const placeholders = insertValues.map((_, index) => `$${index + 1}`);
     const updateAssignments = insertColumns
       .filter((column) => column !== "ticker")
       .map((column) =>

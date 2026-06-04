@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getSettingValue, queryRow, queryRows, runSql, upsertSetting } from "@/lib/postgres-access";
 import { generateUpcomingEarningsAlerts } from "@/lib/earnings";
+import { readJsonCache, writeJsonCache } from "@/lib/snapshot-cache";
 
 interface MarketEventRow {
   event_type: string;
@@ -241,6 +242,11 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const cached = await readJsonCache<MarketEventsCache>(MARKET_EVENTS_CACHE_KEY, MARKET_EVENTS_CACHE_TTL_MS);
+  if (cached) {
+    return NextResponse.json(cached);
+  }
+
   await refreshEventsIfNeeded();
   await generateUpcomingEarningsAlerts();
 
@@ -252,9 +258,19 @@ export async function GET() {
     LIMIT 250
   `, [cutoffDate]);
 
-  return NextResponse.json({
+  const payload: MarketEventsCache = {
     buckets: bucketize(events as Array<Record<string, unknown>>),
-    events,
+    events: events as Array<Record<string, unknown>>,
     refreshedAt: new Date().toISOString(),
-  });
+  };
+  await writeJsonCache(MARKET_EVENTS_CACHE_KEY, payload);
+  return NextResponse.json(payload);
 }
+type MarketEventsCache = {
+  refreshedAt: string;
+  events: Array<Record<string, unknown>>;
+  buckets: ReturnType<typeof bucketize>;
+};
+
+const MARKET_EVENTS_CACHE_KEY = "market_events_cache";
+const MARKET_EVENTS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;

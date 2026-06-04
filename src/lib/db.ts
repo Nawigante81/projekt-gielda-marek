@@ -248,6 +248,16 @@ function initSchema(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS market_sentiment_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+      fear_greed_score REAL,
+      put_call_ratio REAL,
+      fear_greed_label TEXT,
+      vix_value REAL,
+      breadth_score REAL
+    );
+
     CREATE TABLE IF NOT EXISTS alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ticker TEXT NOT NULL,

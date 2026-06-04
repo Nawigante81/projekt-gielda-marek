@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { generateUpcomingEarningsAlerts, getUpcomingEarnings } from "@/lib/earnings";
+import { generateUpcomingEarningsAlerts, getCachedEarningsCalendar, getUpcomingEarnings, setCachedEarningsCalendar } from "@/lib/earnings";
 
 function bucketize(events: Awaited<ReturnType<typeof getUpcomingEarnings>>) {
   const now = new Date();
@@ -22,13 +22,22 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const events = await getUpcomingEarnings();
+  const cached = await getCachedEarningsCalendar();
+  let events = cached?.events || [];
+  let refreshedAt = cached?.refreshedAt || null;
+
+  if (events.length === 0) {
+    events = await getUpcomingEarnings();
+    refreshedAt = new Date().toISOString();
+    await setCachedEarningsCalendar(events);
+  }
+
   const alertCount = await generateUpcomingEarningsAlerts();
 
   return NextResponse.json({
     events,
     buckets: bucketize(events),
     alertCount,
-    refreshedAt: new Date().toISOString(),
+    refreshedAt,
   });
 }

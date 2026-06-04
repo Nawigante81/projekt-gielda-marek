@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { BarChart2, TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react";
 import PriceChange from "@/components/PriceChange";
+import TrendLabel from "@/components/TrendLabel";
 
 interface MarketIndex {
   id: number;
@@ -147,25 +148,28 @@ export default function Market() {
           </div>
           <div className="grid grid-cols-3 gap-6 text-right">
             <div>
-              <div className="text-xs text-slate-500">S&P 500</div>
-              <div className="font-mono text-sm text-white">{spy?.value ? `$${spy.value.toFixed(2)}` : "—"}</div>
-              <PriceChange value={spy?.change_pct ?? null} className="text-xs" />
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">VIX</div>
-              <div className={`font-mono text-sm ${vixVal > 25 ? "text-red-400" : vixVal < 15 ? "text-emerald-400" : "text-white"}`}>
-                {vix?.value ? vix.value.toFixed(2) : "—"}
+                      <div className="text-xs text-slate-500">S&P 500</div>
+                      <div className="font-mono text-sm text-white">{spy?.value ? `$${spy.value.toFixed(2)}` : "—"}</div>
+                      <PriceChange value={spy?.change_pct ?? null} className="text-xs" />
+                      <TrendLabel delta={spy?.change_pct} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">VIX</div>
+                      <div className={`font-mono text-sm ${vixVal > 25 ? "text-red-400" : vixVal < 15 ? "text-emerald-400" : "text-white"}`}>
+                        {vix?.value ? vix.value.toFixed(2) : "—"}
+                      </div>
+                      <PriceChange value={vix?.change_pct ?? null} className="text-xs" />
+                      <TrendLabel delta={vix?.change_pct} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Nasdaq 100</div>
+                      <div className="font-mono text-sm text-white">{indexBySymbol["QQQ"]?.value ? `$${indexBySymbol["QQQ"].value.toFixed(2)}` : "—"}</div>
+                      <PriceChange value={indexBySymbol["QQQ"]?.change_pct ?? null} className="text-xs" />
+                      <TrendLabel delta={indexBySymbol["QQQ"]?.change_pct} />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <PriceChange value={vix?.change_pct ?? null} className="text-xs" />
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Nasdaq 100</div>
-              <div className="font-mono text-sm text-white">{indexBySymbol["QQQ"]?.value ? `$${indexBySymbol["QQQ"].value.toFixed(2)}` : "—"}</div>
-              <PriceChange value={indexBySymbol["QQQ"]?.change_pct ?? null} className="text-xs" />
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Indices by category */}
       {CATEGORIES.map(category => {
@@ -211,6 +215,7 @@ export default function Market() {
                           {trendIcon}
                           <PriceChange value={idx.change_pct ?? null} className="text-xs" />
                         </div>
+                        <TrendLabel delta={idx.change_pct} />
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2">

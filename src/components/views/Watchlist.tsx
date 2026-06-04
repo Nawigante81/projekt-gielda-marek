@@ -5,6 +5,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { Plus, Trash2, Eye, X, Loader2 } from "lucide-react";
 import SignalBadge from "@/components/SignalBadge";
 import PriceChange from "@/components/PriceChange";
+import TrendLabel from "@/components/TrendLabel";
 import toast from "react-hot-toast";
 
 interface WatchlistItem {
@@ -340,6 +341,7 @@ export default function Watchlist() {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <PriceChange value={item.change_pct} className="text-sm" />
+                  <TrendLabel delta={item.change_pct} />
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-xs text-slate-400">
                   {item.volume ? (item.volume / 1e6).toFixed(2) + "M" : "—"}
@@ -439,6 +441,7 @@ export default function Watchlist() {
               <div className="rounded-md bg-slate-900/70 p-2">
                 <div className="text-slate-500">Zmiana</div>
                 <div className="mt-1"><PriceChange value={item.change_pct} className="text-xs" /></div>
+                <div className="mt-1"><TrendLabel delta={item.change_pct} /></div>
               </div>
               <div className="rounded-md bg-slate-900/70 p-2">
                 <div className="text-slate-500">AI Score</div>

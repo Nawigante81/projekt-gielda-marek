@@ -5,6 +5,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { Plus, Edit2, Trash2, X, TrendingUp, Loader2 } from "lucide-react";
 import SignalBadge from "@/components/SignalBadge";
 import PriceChange from "@/components/PriceChange";
+import TrendLabel from "@/components/TrendLabel";
 import toast from "react-hot-toast";
 
 interface PortfolioItem {
@@ -351,6 +352,7 @@ export default function Portfolio() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <PriceChange value={item.change_pct} className="text-xs" />
+                    <TrendLabel delta={item.change_pct} />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className={`font-mono text-sm ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>

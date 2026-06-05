@@ -36,7 +36,7 @@ export interface SecFilingRow {
   updated_at: string;
 }
 
-const SEC_FORMS = new Set(["10-K", "10-Q", "8-K", "S-1", "DEF 14A", "4"]);
+const SEC_FORMS = new Set(["10-K", "10-Q", "8-K", "S-1", "DEF 14A", "4", "13F-HR"]);
 
 function secHeaders(): HeadersInit {
   return {
@@ -124,14 +124,14 @@ export async function refreshSecFilings(ticker: string): Promise<SecFilingRow[]>
          ticker, cik, company_name, form, accession_number, filing_date, report_date,
          primary_document, filing_url, source, updated_at
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sec', datetime('now'))
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'sec', NOW())
        ON CONFLICT(ticker, accession_number, form) DO UPDATE SET
          company_name = excluded.company_name,
          filing_date = excluded.filing_date,
          report_date = excluded.report_date,
          primary_document = excluded.primary_document,
          filing_url = excluded.filing_url,
-         updated_at = datetime('now')`,
+         updated_at = NOW()`,
       [
         normalizedTicker,
         resolved.cik,

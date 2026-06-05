@@ -28,6 +28,7 @@ services:
       - .env
     environment:
       PORT: "3000"
+      HOSTNAME: "0.0.0.0"
       DATABASE_PROVIDER: postgres
       SQLITE_DB_PATH: /app/data/stock_analyst.db
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app_db
@@ -48,6 +49,7 @@ services:
       - .env
     environment:
       PORT: "3000"
+      HOSTNAME: "0.0.0.0"
       DATABASE_PROVIDER: postgres
       SQLITE_DB_PATH: /app/data/stock_analyst.db
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/app_db

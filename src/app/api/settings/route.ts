@@ -9,6 +9,7 @@ const SENSITIVE_KEYS = [
   "twelvedata_api_key",
   "alphavantage_api_key",
   "openai_api_key",
+  "anthropic_api_key",
   "telegram_bot_token",
   "smtp_password",
 ];
@@ -26,6 +27,8 @@ export async function GET() {
     alphavantage_api_key: !!process.env.ALPHA_VANTAGE_API_KEY,
     openai_api_key: !!process.env.OPENAI_API_KEY,
     openai_base_url: process.env.OPENAI_BASE_URL || "",
+    anthropic_api_key: !!process.env.ANTHROPIC_API_KEY,
+    anthropic_base_url: process.env.ANTHROPIC_BASE_URL || "",
     telegram_bot_token: !!process.env.TELEGRAM_BOT_TOKEN,
     telegram_chat_id: process.env.TELEGRAM_CHAT_ID || "",
   };
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   const allowedKeys = [
     "finnhub_api_key", "twelvedata_api_key", "alphavantage_api_key", "openai_api_key",
-    "openai_base_url", "telegram_bot_token", "telegram_chat_id",
+    "openai_base_url", "anthropic_api_key", "anthropic_base_url", "telegram_bot_token", "telegram_chat_id",
     "smtp_host", "smtp_port", "smtp_user", "smtp_password",
     "rsi_overbought", "rsi_oversold", "volume_spike_threshold",
     "price_move_threshold", "data_source_primary", "data_source_secondary",

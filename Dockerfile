@@ -16,6 +16,7 @@ RUN npm run build
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 WORKDIR /app
 
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs

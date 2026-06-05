@@ -21,6 +21,7 @@ export default function Reports() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [filter, setFilter] = useState<"all" | "morning" | "midday" | "close" | "manual" | "scheduled">("all");
 
   const fetchReports = useCallback(async () => {
     const res = await fetch("/api/reports");
@@ -39,6 +40,14 @@ export default function Reports() {
     return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-blue-500" size={24} /></div>;
   }
 
+  const filteredReports = reports.filter((report) => {
+    if (filter === "all") return true;
+    if (filter === "morning") return report.report_type.includes("morning") || report.report_type.includes("premarket");
+    if (filter === "midday") return report.report_type.includes("midday");
+    if (filter === "close") return report.report_type.includes("close");
+    return report.report_type === filter;
+  });
+
   return (
     <div className="space-y-4">
       <div>
@@ -48,8 +57,27 @@ export default function Reports() {
         <p className="text-xs text-slate-500 mt-0.5">{reports.length} raportów</p>
       </div>
 
+      <div className="flex flex-wrap gap-1 bg-slate-800/50 rounded-md p-0.5 w-fit">
+        {([
+          ["all", "Wszystkie"],
+          ["morning", "Poranny"],
+          ["midday", "Południowy"],
+          ["close", "Zamknięcie"],
+          ["manual", "Ręczne"],
+          ["scheduled", "Zaplanowane"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            className={`px-3 py-1 rounded text-xs transition-colors ${filter === key ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-2">
-        {reports.map((report, idx) => {
+        {filteredReports.map((report, idx) => {
           const sentiment = SENTIMENT_CONFIG[report.market_sentiment] || SENTIMENT_CONFIG.neutral;
           const isExpanded = expanded === report.id;
           const isLatest = idx === 0;
@@ -97,10 +125,10 @@ export default function Reports() {
           );
         })}
 
-        {reports.length === 0 && (
+        {filteredReports.length === 0 && (
           <div className="card p-12 text-center text-slate-600">
             <FileText size={32} className="mx-auto mb-2 opacity-30" />
-            <div className="text-sm">Brak raportów. Uruchom analizę z dashboardu.</div>
+            <div className="text-sm">{reports.length === 0 ? "Brak raportów. Uruchom analizę z dashboardu." : "Brak raportów dla wybranego filtra."}</div>
           </div>
         )}
       </div>

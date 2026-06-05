@@ -10,6 +10,15 @@ interface MarketIndex {
   id: number;
   symbol: string;
   name: string;
+  instrument_name?: string;
+  instrument_type?: string;
+  data_source?: string;
+  price_freshness?: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  data_warnings?: string[];
+  has_data_warning?: boolean;
   value: number | null;
   change_pct: number | null;
   change_abs: number | null;
@@ -49,6 +58,19 @@ interface MarketEvent {
   impact: string;
 }
 
+interface MarketEventsPayload {
+  buckets: { today: MarketEvent[]; tomorrow: MarketEvent[]; thisWeek: MarketEvent[]; next30Days: MarketEvent[] };
+  refreshedAt?: string;
+}
+
+interface MarketSentiment {
+  fearGreedScore: number | null;
+  fearGreedLabel: string | null;
+  putCallRatio: number | null;
+  breadthScore: number | null;
+  breadthLabel: string | null;
+}
+
 const INDEX_META: Record<string, { icon: string; category: string; description: string }> = {
   "SPY": { icon: "📈", category: "Equities", description: "S&P 500 ETF - 500 największych spółek USA" },
   "QQQ": { icon: "💻", category: "Equities", description: "Nasdaq 100 ETF - spółki technologiczne" },
@@ -85,16 +107,18 @@ export default function Market() {
   const [indices, setIndices] = useState<MarketIndex[]>([]);
   const [heatmap, setHeatmap] = useState<HeatmapTile[]>([]);
   const [sectors, setSectors] = useState<SectorRow[]>([]);
-  const [events, setEvents] = useState<{ today: MarketEvent[]; tomorrow: MarketEvent[]; thisWeek: MarketEvent[]; next30Days: MarketEvent[] } | null>(null);
+  const [eventsPayload, setEventsPayload] = useState<MarketEventsPayload | null>(null);
+  const [marketSentimentData, setMarketSentimentData] = useState<MarketSentiment | null>(null);
   const [heatmapIndex, setHeatmapIndex] = useState<"SP500" | "NASDAQ" | "DOW">("SP500");
   const [loading, setLoading] = useState(true);
 
   const fetchMarket = useCallback(async () => {
-    const [marketRes, heatmapRes, sectorsRes, eventsRes] = await Promise.all([
+    const [marketRes, heatmapRes, sectorsRes, eventsRes, sentimentRes] = await Promise.all([
       fetch("/api/market"),
       fetch(`/api/heatmap?index=${heatmapIndex}`),
       fetch("/api/sectors"),
       fetch("/api/market-events"),
+      fetch("/api/market-sentiment"),
     ]);
     if (marketRes.ok) setIndices(await marketRes.json());
     if (heatmapRes.ok) {
@@ -104,8 +128,9 @@ export default function Market() {
     if (sectorsRes.ok) setSectors(await sectorsRes.json());
     if (eventsRes.ok) {
       const data = await eventsRes.json();
-      setEvents(data.buckets || null);
+      setEventsPayload({ buckets: data.buckets || { today: [], tomorrow: [], thisWeek: [], next30Days: [] }, refreshedAt: data.refreshedAt });
     }
+    if (sentimentRes.ok) setMarketSentimentData(await sentimentRes.json());
     setLoading(false);
   }, [heatmapIndex]);
 
@@ -128,6 +153,12 @@ export default function Market() {
     (sector.worst_change_pct !== null && sector.worst_change_pct !== 0)
   );
   const hasMeaningfulSectors = meaningfulSectors.length > 0;
+  const sectorLeaders = [...meaningfulSectors].sort((left, right) => right.avg_change_pct - left.avg_change_pct).slice(0, 3);
+  const sectorLaggards = [...meaningfulSectors].sort((left, right) => left.avg_change_pct - right.avg_change_pct).slice(0, 3);
+  const events = eventsPayload?.buckets || null;
+  const totalEvents = events
+    ? events.today.length + events.tomorrow.length + events.thisWeek.length + events.next30Days.length
+    : 0;
 
   // Overall market sentiment
   const spyChange = spy?.change_pct || 0;
@@ -158,7 +189,7 @@ export default function Market() {
           </div>
           <div className="grid grid-cols-3 gap-6 text-right">
             <div>
-                      <div className="text-xs text-slate-500">S&P 500</div>
+                      <div className="text-xs text-slate-500">SPY ETF</div>
                       <div className="font-mono text-sm text-white">{spy?.value ? `$${spy.value.toFixed(2)}` : "Brak danych"}</div>
                       <PriceChange value={spy?.change_pct ?? null} className="text-xs" />
                       <TrendLabel delta={spy?.change_pct} />
@@ -172,7 +203,7 @@ export default function Market() {
                       <TrendLabel delta={vix?.change_pct} />
                     </div>
                     <div>
-                      <div className="text-xs text-slate-500">Nasdaq 100</div>
+                      <div className="text-xs text-slate-500">QQQ ETF</div>
                       <div className="font-mono text-sm text-white">{indexBySymbol["QQQ"]?.value ? `$${indexBySymbol["QQQ"].value.toFixed(2)}` : "Brak danych"}</div>
                       <PriceChange value={indexBySymbol["QQQ"]?.change_pct ?? null} className="text-xs" />
                       <TrendLabel delta={indexBySymbol["QQQ"]?.change_pct} />
@@ -180,6 +211,45 @@ export default function Market() {
                   </div>
                 </div>
               </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="card p-4">
+          <div className="text-xs text-slate-500">Fear & Greed</div>
+          <div className="mt-1 font-mono text-2xl text-white">
+            {marketSentimentData?.fearGreedScore !== null && marketSentimentData?.fearGreedScore !== undefined
+              ? marketSentimentData.fearGreedScore.toFixed(0)
+              : "—"}
+          </div>
+          <div className="text-xs text-slate-500">{marketSentimentData?.fearGreedLabel || "brak danych"}</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs text-slate-500">Market Breadth</div>
+          <div className="mt-1 font-mono text-2xl text-white">
+            {marketSentimentData?.breadthScore !== null && marketSentimentData?.breadthScore !== undefined
+              ? `${(marketSentimentData.breadthScore * 100).toFixed(0)}%`
+              : "—"}
+          </div>
+          <div className="text-xs text-slate-500">{marketSentimentData?.breadthLabel || "proxy indeksów"}</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs text-slate-500">Put/Call</div>
+          <div className="mt-1 font-mono text-2xl text-white">
+            {marketSentimentData?.putCallRatio !== null && marketSentimentData?.putCallRatio !== undefined
+              ? marketSentimentData.putCallRatio.toFixed(2)
+              : "—"}
+          </div>
+          <div className="text-xs text-slate-500">opcjonalne źródło zewnętrzne</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-xs text-slate-500">Sector Rotation</div>
+          <div className="mt-1 text-sm text-emerald-300">
+            {sectorLeaders[0] ? `${sectorLeaders[0].sector} ${sectorLeaders[0].avg_change_pct.toFixed(2)}%` : "—"}
+          </div>
+          <div className="text-xs text-red-300">
+            {sectorLaggards[0] ? `${sectorLaggards[0].sector} ${sectorLaggards[0].avg_change_pct.toFixed(2)}%` : "brak danych"}
+          </div>
+        </div>
+      </div>
 
       {/* Indices by category */}
       {hasLiveIndices ? CATEGORIES.map(category => {
@@ -196,7 +266,7 @@ export default function Market() {
             <h2 className="text-sm font-medium text-slate-400 mb-2">{category}</h2>
             <div className="grid grid-cols-2 gap-3">
               {visibleIndices.map(idx => {
-                const meta = INDEX_META[idx.symbol] || { icon: "📊", description: idx.name };
+                const meta = INDEX_META[idx.symbol] || { icon: idx.icon || "📊", category: idx.category || "Other", description: idx.description || idx.name };
                 const trendIcon = idx.change_pct && idx.change_pct > 0
                   ? <TrendingUp size={12} className="text-emerald-400" />
                   : idx.change_pct && idx.change_pct < 0
@@ -208,13 +278,20 @@ export default function Market() {
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
-                          <span className="text-lg">{meta.icon}</span>
+                          <span className="text-lg">{idx.icon || meta.icon}</span>
                           <div>
-                            <div className="text-sm font-medium text-white">{idx.name}</div>
-                            <div className="text-[10px] text-slate-600">{idx.symbol}</div>
+                            <div className="text-sm font-medium text-white">{idx.instrument_name || idx.name}</div>
+                            <div className="text-[10px] text-slate-500">{idx.symbol} • {idx.instrument_type || "index"}</div>
                           </div>
                         </div>
-                        <div className="text-[11px] text-slate-500">{meta.description}</div>
+                        <div className="text-[11px] text-slate-500">{idx.description || meta.description}</div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase text-slate-400">{idx.price_freshness || "delayed"}</span>
+                          <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400">{idx.data_source || "unknown source"}</span>
+                          {idx.has_data_warning ? (
+                            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">DATA WARNING</span>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="font-mono text-base font-semibold text-white">
@@ -227,15 +304,25 @@ export default function Market() {
                           {trendIcon}
                           <PriceChange value={idx.change_pct ?? null} className="text-xs" />
                         </div>
+                        <div className={idx.change_abs && idx.change_abs < 0 ? "text-xs text-red-300" : "text-xs text-emerald-300"}>
+                          {idx.change_abs !== null && idx.change_abs !== undefined
+                            ? `${idx.change_abs >= 0 ? "+" : ""}${idx.change_abs.toFixed(2)}`
+                            : "—"}
+                        </div>
                         <TrendLabel delta={idx.change_pct} />
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2">
                       <div className="text-[10px] text-slate-600">
-                        {idx.last_updated ? `${new Date(idx.last_updated).toLocaleTimeString("pl-PL")}` : "—"}
+                        {idx.last_updated ? new Date(idx.last_updated).toLocaleString("pl-PL") : "—"}
                       </div>
                       <MarketStatus value={idx.value} change_pct={idx.change_pct} symbol={idx.symbol} />
                     </div>
+                    {idx.data_warnings && idx.data_warnings.length > 0 ? (
+                      <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[10px] text-amber-200">
+                        {idx.data_warnings[0]}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -266,7 +353,7 @@ export default function Market() {
           </div>
         </div>
         {hasMeaningfulHeatmap ? (
-        <div className="grid grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {meaningfulHeatmap.slice(0, 24).map((tile) => {
             const bg = tile.change_pct >= 2 ? "bg-emerald-500/25 border-emerald-700/40" :
               tile.change_pct > 0 ? "bg-emerald-500/10 border-emerald-800/30" :
@@ -295,7 +382,7 @@ export default function Market() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="card p-4">
           <div className="text-sm font-medium text-slate-300 mb-3">Analiza sektorów</div>
           {hasMeaningfulSectors ? (
@@ -330,6 +417,14 @@ export default function Market() {
 
         <div className="card p-4">
           <div className="text-sm font-medium text-slate-300 mb-3">Kalendarz rynku</div>
+          {totalEvents === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-sm text-slate-500">
+              <div className="text-slate-400">Brak wydarzeń z API dla wybranego okresu.</div>
+              <div className="mt-2 text-xs text-slate-600">
+                Ostatnia próba aktualizacji: {eventsPayload?.refreshedAt ? new Date(eventsPayload.refreshedAt).toLocaleString("pl-PL") : "—"}
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-3 text-xs">
             {[
               { label: "Dzisiaj", rows: events?.today || [] },
@@ -350,6 +445,7 @@ export default function Market() {
               </div>
             ))}
           </div>
+          )}
         </div>
       </div>
     </div>

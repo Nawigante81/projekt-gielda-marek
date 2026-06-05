@@ -13,11 +13,27 @@ export function isUsingPostgres(): boolean {
 function toPostgresSql(sql: string): string {
   let index = 0;
   return sql
+    .replace(/datetime\('now'\s*,\s*'-(\d+)\s+day[s]?'\)/gi, "NOW() - INTERVAL '$1 day'")
+    .replace(/date\('now'\s*,\s*'-(\d+)\s+day[s]?'\)/gi, "CURRENT_DATE - INTERVAL '$1 day'")
     .replace(/datetime\('now'\)/gi, "NOW()")
+    .replace(/date\('now'\)/gi, "CURRENT_DATE")
+    .replace(/\bIFNULL\s*\(/gi, "COALESCE(")
     .replace(/\?/g, () => {
       index += 1;
       return `$${index}`;
     });
+}
+
+function toSqliteSql(sql: string): string {
+  return sql
+    .replace(/::timestamptz/gi, "")
+    .replace(/::timestamp/gi, "")
+    .replace(/::date/gi, "")
+    .replace(/NOW\(\)\s*-\s*INTERVAL\s*'(\d+)\s+day[s]?'/gi, "datetime('now', '-$1 day')")
+    .replace(/CURRENT_DATE\s*-\s*INTERVAL\s*'(\d+)\s+day[s]?'/gi, "date('now', '-$1 day')")
+    .replace(/NOW\(\)/gi, "datetime('now')")
+    .replace(/CURRENT_DATE/gi, "date('now')")
+    .replace(/\bCOALESCE\s*\(/gi, "COALESCE(");
 }
 
 export async function getSettingsRows(): Promise<Array<{ key: string; value: string }>> {
@@ -105,7 +121,7 @@ export async function queryRows<T>(sql: string, params: Array<string | number | 
   }
 
   const db = getDb();
-  return db.prepare(sql).all(...params) as T[];
+  return db.prepare(toSqliteSql(sql)).all(...params) as T[];
 }
 
 export async function queryRow<T>(sql: string, params: Array<string | number | null> = []): Promise<T | undefined> {
@@ -115,7 +131,7 @@ export async function queryRow<T>(sql: string, params: Array<string | number | n
   }
 
   const db = getDb();
-  return db.prepare(sql).get(...params) as T | undefined;
+  return db.prepare(toSqliteSql(sql)).get(...params) as T | undefined;
 }
 
 export async function runSql(sql: string, params: Array<string | number | null> = []): Promise<{ lastInsertId?: number }> {
@@ -130,7 +146,7 @@ export async function runSql(sql: string, params: Array<string | number | null> 
   }
 
   const db = getDb();
-  const result = db.prepare(sql).run(...params) as { lastInsertRowid: number };
+  const result = db.prepare(toSqliteSql(sql)).run(...params) as { lastInsertRowid: number };
   return { lastInsertId: Number(result.lastInsertRowid) };
 }
 

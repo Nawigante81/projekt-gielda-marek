@@ -47,6 +47,26 @@ function parseDetails(value: string | null): Record<string, unknown> {
   }
 }
 
+function detailNumber(details: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const raw = details[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const parsed = Number(raw.replace(/[$,%]/g, ""));
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    if (raw && typeof raw === "object" && "raw" in raw) {
+      const nested = (raw as { raw?: unknown }).raw;
+      if (typeof nested === "number" && Number.isFinite(nested)) return nested;
+    }
+  }
+  return null;
+}
+
+function formatMaybeNumber(value: number | null, prefix = ""): string {
+  return value === null ? "—" : `${prefix}${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
 export default function EarningsCalendar() {
   const { setSelectedTicker, setActiveView } = useAppStore();
   const [data, setData] = useState<EarningsResponse | null>(null);
@@ -125,12 +145,16 @@ export default function EarningsCalendar() {
       </div>
 
       {hasEvents ? (
-      <div className="card overflow-hidden">
-        <table className="w-full">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[980px]">
           <thead>
             <tr className="border-b border-slate-800">
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Ticker</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Tytuł</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">Expected move</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">EPS consensus</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">Revenue est.</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">Surprise</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">Data</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-slate-500">Źródło</th>
             </tr>
@@ -138,6 +162,14 @@ export default function EarningsCalendar() {
           <tbody>
             {(data?.events || []).map((event) => {
               const details = parseDetails(event.details_json);
+              const epsAverage = detailNumber(details, ["earningsAverage", "epsConsensus", "epsEstimate"]);
+              const epsLow = detailNumber(details, ["earningsLow", "epsLow"]);
+              const epsHigh = detailNumber(details, ["earningsHigh", "epsHigh"]);
+              const revenueAverage = detailNumber(details, ["revenueAverage", "revenueEstimate", "revenueConsensus"]);
+              const surprise = detailNumber(details, ["earningsSurprise", "epsSurprise", "surprise"]);
+              const expectedMove = epsAverage !== null && epsLow !== null && epsHigh !== null && epsAverage !== 0
+                ? (Math.abs(epsHigh - epsLow) / Math.abs(epsAverage)) * 100
+                : null;
               return (
                 <tr key={event.id} className="border-b border-slate-800/50 transition-colors hover:bg-slate-800/20">
                   <td className="px-4 py-3">
@@ -159,6 +191,10 @@ export default function EarningsCalendar() {
                       <div className="mt-0.5 text-[11px] text-slate-600">EPS avg: {String(details.earningsAverage)}</div>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-right font-mono text-xs text-slate-400">{expectedMove === null ? "—" : `${expectedMove.toFixed(1)}%`}</td>
+                  <td className="px-4 py-3 text-right font-mono text-xs text-slate-400">{formatMaybeNumber(epsAverage)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-xs text-slate-400">{formatMaybeNumber(revenueAverage, "$")}</td>
+                  <td className={`px-4 py-3 text-right font-mono text-xs ${surprise === null ? "text-slate-600" : surprise >= 0 ? "text-emerald-400" : "text-red-400"}`}>{formatMaybeNumber(surprise)}</td>
                   <td className="px-4 py-3 text-right font-mono text-xs text-slate-400">{formatDate(event.event_date)}</td>
                   <td className="px-4 py-3 text-right text-xs text-slate-500">{event.source || "—"}</td>
                 </tr>

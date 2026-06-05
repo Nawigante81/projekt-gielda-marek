@@ -11,6 +11,9 @@ export const DEFAULT_SETTINGS: Array<[string, string]> = [
   ["data_source_primary", "finnhub"],
   ["data_source_secondary", "alphavantage"],
   ["data_source_fallback", "yfinance"],
+  ["openai_base_url", "https://api.openai.com/v1"],
+  ["anthropic_api_key", ""],
+  ["anthropic_base_url", "https://api.anthropic.com"],
   ["timezone", "America/New_York"],
   ["report_language", "pl"],
   ["mode", "test"],
@@ -28,17 +31,17 @@ export const DEFAULT_SETTINGS: Array<[string, string]> = [
 ];
 
 export const DEFAULT_MARKET_INDICES: Array<[string, string]> = [
-  ["SPY", "S&P 500"],
-  ["QQQ", "Nasdaq 100"],
-  ["DIA", "Dow Jones"],
-  ["IWM", "Russell 2000"],
-  ["^VIX", "VIX"],
+  ["SPY", "SPY - S&P 500 ETF"],
+  ["QQQ", "QQQ - Nasdaq 100 ETF"],
+  ["DIA", "DIA - Dow Jones ETF"],
+  ["IWM", "IWM - Russell 2000 ETF"],
+  ["^VIX", "^VIX - CBOE Volatility Index"],
   ["DX-Y.NYB", "DXY"],
   ["^TNX", "US 10Y Yield"],
-  ["GC=F", "Gold"],
-  ["CL=F", "Oil (WTI)"],
-  ["BTC-USD", "Bitcoin"],
-  ["ETH-USD", "Ethereum"],
+  ["GC=F", "GC=F - Gold Futures"],
+  ["CL=F", "CL=F - WTI Crude Oil Futures"],
+  ["BTC-USD", "BTC-USD - Bitcoin USD"],
+  ["ETH-USD", "ETH-USD - Ethereum USD"],
 ];
 
 export const DEFAULT_WATCHLISTS: Array<[string, string, string, string, number]> = [
@@ -61,4 +64,3 @@ export const DEFAULT_ALERT_RULES: Array<[string, string, string, number | null]>
   ["gap_up", "Gap Up", "Otwarcie powyżej poprzedniego high", null],
   ["gap_down", "Gap Down", "Otwarcie poniżej poprzedniego low", null],
 ];
-

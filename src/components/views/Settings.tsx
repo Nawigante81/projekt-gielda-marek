@@ -10,6 +10,8 @@ interface SettingsData {
   alphavantage_api_key: string | boolean;
   openai_api_key: string | boolean;
   openai_base_url: string;
+  anthropic_api_key: string | boolean;
+  anthropic_base_url: string;
   telegram_bot_token: string | boolean;
   telegram_chat_id: string;
   smtp_host: string;
@@ -41,10 +43,22 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [changingPwd, setChangingPwd] = useState(false);
   const [seedLoading, setSeedLoading] = useState(false);
+  const [integrationStatus, setIntegrationStatus] = useState<{ database: string; errors: number; checkedAt: string } | null>(null);
 
   const fetchSettings = useCallback(async () => {
-    const res = await fetch("/api/settings");
+    const [res, healthRes, errorsRes] = await Promise.all([
+      fetch("/api/settings"),
+      fetch("/api/health"),
+      fetch("/api/errors"),
+    ]);
     if (res.ok) setSettings(await res.json());
+    const health = healthRes.ok ? await healthRes.json() : null;
+    const errors = errorsRes.ok ? await errorsRes.json() : [];
+    setIntegrationStatus({
+      database: health?.database || health?.status || "unknown",
+      errors: Array.isArray(errors) ? errors.length : 0,
+      checkedAt: new Date().toISOString(),
+    });
     setLoading(false);
   }, []);
 
@@ -172,6 +186,33 @@ export default function Settings() {
           <InputField label="Alpha Vantage API Key" settingKey="alphavantage_api_key" placeholder="Darmowy klucz z alphavantage.co" isPassword />
           <InputField label="OpenAI API Key" settingKey="openai_api_key" placeholder="sk-..." isPassword />
           <InputField label="OpenAI Base URL" settingKey="openai_base_url" placeholder="https://api.openai.com/v1" />
+          <InputField label="Anthropic API Key" settingKey="anthropic_api_key" placeholder="sk-ant-..." isPassword />
+          <InputField label="Anthropic Base URL" settingKey="anthropic_base_url" placeholder="https://api.anthropic.com" />
+        </div>
+      </div>
+
+      <div className="card p-4 space-y-4">
+        <h2 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Monitoring integracji</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+            <div className="text-[11px] text-slate-500">Baza danych</div>
+            <div className="mt-1 text-sm text-emerald-400">{integrationStatus?.database || "unknown"}</div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+            <div className="text-[11px] text-slate-500">Błędy pobierania</div>
+            <div className={`mt-1 text-sm ${integrationStatus?.errors ? "text-amber-400" : "text-emerald-400"}`}>
+              {integrationStatus?.errors ?? 0}
+            </div>
+          </div>
+          <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+            <div className="text-[11px] text-slate-500">Ostatni check</div>
+            <div className="mt-1 text-xs text-slate-400">
+              {integrationStatus?.checkedAt ? new Date(integrationStatus.checkedAt).toLocaleTimeString("pl-PL") : "—"}
+            </div>
+          </div>
+        </div>
+        <div className="text-xs text-slate-600">
+          Limity API zależą od dostawców. Aplikacja używa cache, retry i kolejności źródeł ustawionej niżej.
         </div>
       </div>
 

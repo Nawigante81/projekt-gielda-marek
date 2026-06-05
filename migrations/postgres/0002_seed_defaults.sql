@@ -40,19 +40,19 @@ DO NOTHING;
 
 INSERT INTO market_indices (symbol, name)
 VALUES
-  ('SPY', 'S&P 500'),
-  ('QQQ', 'Nasdaq 100'),
-  ('DIA', 'Dow Jones'),
-  ('IWM', 'Russell 2000'),
-  ('^VIX', 'VIX'),
+  ('SPY', 'SPY - S&P 500 ETF'),
+  ('QQQ', 'QQQ - Nasdaq 100 ETF'),
+  ('DIA', 'DIA - Dow Jones ETF'),
+  ('IWM', 'IWM - Russell 2000 ETF'),
+  ('^VIX', '^VIX - CBOE Volatility Index'),
   ('DX-Y.NYB', 'DXY'),
   ('^TNX', 'US 10Y Yield'),
-  ('GC=F', 'Gold'),
-  ('CL=F', 'Oil (WTI)'),
-  ('BTC-USD', 'Bitcoin'),
-  ('ETH-USD', 'Ethereum')
+  ('GC=F', 'GC=F - Gold Futures'),
+  ('CL=F', 'CL=F - WTI Crude Oil Futures'),
+  ('BTC-USD', 'BTC-USD - Bitcoin USD'),
+  ('ETH-USD', 'ETH-USD - Ethereum USD')
 ON CONFLICT (symbol)
-DO NOTHING;
+DO UPDATE SET name = EXCLUDED.name;
 
 INSERT INTO watchlists (name, slug, description, color, is_default)
 VALUES

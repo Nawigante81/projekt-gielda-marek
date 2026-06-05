@@ -54,6 +54,13 @@ export async function GET() {
       ti.calculated_at,
       s.score as news_sentiment_score,
       s.label as news_sentiment_label,
+      (CASE
+        WHEN cp.avg_volume IS NOT NULL AND cp.avg_volume > 0 AND cp.volume IS NOT NULL
+        THEN cp.volume * 1.0 / cp.avg_volume
+        ELSE NULL
+      END) as unusual_volume_ratio,
+      (SELECT event_date FROM market_events WHERE ticker = w.ticker AND event_type = 'earnings' AND event_date::timestamptz >= NOW() - INTERVAL '1 day' ORDER BY event_date ASC LIMIT 1) as earnings_date,
+      (SELECT form || ' ' || filing_date FROM sec_filings WHERE ticker = w.ticker AND form IN ('8-K', '10-Q', '10-K', '4') ORDER BY filing_date DESC, id DESC LIMIT 1) as sec_event,
       (SELECT headline FROM news WHERE ticker = w.ticker ORDER BY published_at DESC LIMIT 1) as latest_news,
       (SELECT message FROM alerts WHERE ticker = w.ticker ORDER BY created_at DESC LIMIT 1) as latest_alert
     FROM watchlist w
@@ -95,7 +102,7 @@ export async function POST(req: NextRequest) {
 
     const result = await runSql(`
       INSERT INTO watchlist (ticker, company_name, notes, group_name, watchlist_id, auto_analyze, opportunity_type, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
     `, [
       ticker.toUpperCase(),
       company_name || "",

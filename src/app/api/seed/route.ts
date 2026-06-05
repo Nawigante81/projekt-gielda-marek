@@ -11,8 +11,8 @@ export async function POST() {
   const hash = hashPassword("admin123");
   await runSql(`
     INSERT INTO users (username, password_hash, updated_at)
-    VALUES (?, ?, datetime('now'))
-    ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, updated_at = datetime('now')
+    VALUES (?, ?, NOW())
+    ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, updated_at = NOW()
   `, ["pytomek@o2.pl", hash]);
 
   // Seed portfolio

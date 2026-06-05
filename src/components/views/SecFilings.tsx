@@ -28,6 +28,7 @@ const formStyles: Record<string, string> = {
   "S-1": "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300",
   "DEF 14A": "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
   "4": "border-slate-700 bg-slate-900 text-slate-300",
+  "13F-HR": "border-violet-500/30 bg-violet-500/10 text-violet-300",
 };
 
 function formatDate(value: string | null): string {
@@ -97,6 +98,10 @@ export default function SecFilings() {
     void fetchFilings("");
   };
   const hasItems = items.length > 0;
+  const formCounts = items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.form] = (acc[item.form] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-4">
@@ -154,14 +159,31 @@ export default function SecFilings() {
         </div>
       </div>
 
+      {hasItems && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            { label: "8-K", value: formCounts["8-K"] || 0 },
+            { label: "10-Q", value: formCounts["10-Q"] || 0 },
+            { label: "10-K", value: formCounts["10-K"] || 0 },
+            { label: "Insider Trading", value: formCounts["4"] || 0 },
+            { label: "Institutional Ownership", value: formCounts["13F-HR"] || 0 },
+          ].map((metric) => (
+            <div key={metric.label} className="card p-3">
+              <div className="text-[11px] text-slate-500">{metric.label}</div>
+              <div className="mt-1 font-mono text-xl text-white">{metric.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="flex h-48 items-center justify-center">
           <Loader2 className="animate-spin text-blue-500" size={24} />
         </div>
       ) : hasItems ? (
-        <div className="card overflow-hidden">
+        <div className="card overflow-x-auto">
           <div className="hidden md:block">
-            <table className="w-full">
+            <table className="w-full min-w-[860px]">
               <thead>
                 <tr className="border-b border-slate-800">
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">Ticker</th>

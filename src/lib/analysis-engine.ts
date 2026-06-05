@@ -461,7 +461,7 @@ async function saveAnalysisSnapshot(
   const recommendationResult = await runSql(`
     INSERT INTO recommendations (
       ticker, analysis_history_id, score, recommendation, entry_price, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, NOW(), NOW())
   `, [
     ticker,
     historyResult.lastInsertId ?? null,
@@ -473,7 +473,7 @@ async function saveAnalysisSnapshot(
   await runSql(`
     INSERT INTO performance_tracking (
       recommendation_id, ticker, entry_price, updated_at, created_at
-    ) VALUES (?, ?, ?, datetime('now'), datetime('now'))
+    ) VALUES (?, ?, ?, NOW(), NOW())
   `, [recommendationResult.lastInsertId ?? null, ticker, priceData.price]);
 }
 
@@ -527,7 +527,7 @@ async function refreshPerformanceTracking(ticker: string): Promise<void> {
       UPDATE performance_tracking
       SET price_7d = ?, price_30d = ?, price_90d = ?, price_180d = ?,
           return_7d = ?, return_30d = ?, return_90d = ?, return_180d = ?,
-          success_rate = ?, average_return = ?, accuracy_label = ?, updated_at = datetime('now')
+          success_rate = ?, average_return = ?, accuracy_label = ?, updated_at = NOW()
       WHERE id = ?
     `, [
       price7d,
@@ -716,7 +716,7 @@ Format: zwięzły, techniczny, bez zbędnych ozdobników.`;
   // Save report
   const result = await runSql(`
     INSERT INTO ai_reports (report_type, trigger_time, content, market_sentiment)
-    VALUES (?, datetime('now'), ?, ?)
+    VALUES (?, NOW(), ?, ?)
   `, [reportType, reportContent, marketSentiment]);
 
   return result.lastInsertId as number;

@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         watchlist_id = COALESCE(?, watchlist_id),
         auto_analyze = COALESCE(?, auto_analyze),
         opportunity_type = COALESCE(?, opportunity_type),
-        updated_at = datetime('now')
+        updated_at = NOW()
     WHERE id = ?
   `, [
     notes ?? null,

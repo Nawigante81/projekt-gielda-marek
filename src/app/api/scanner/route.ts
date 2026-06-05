@@ -17,6 +17,7 @@ interface ScanResult {
   is_watchlisted: boolean;
   rsi: number | null;
   overall_signal: string | null;
+  scanner_types: string[];
 }
 
 interface ScanCandidate {
@@ -38,6 +39,22 @@ function classifyOpportunityType(args: {
   if (args.hasLargeMove) return "unusual_move";
   if (args.isStrongSignal) return "opportunity";
   return "observed";
+}
+
+function classifyScannerTypes(args: {
+  hasVolumeSpike: boolean;
+  hasLargeMove: boolean;
+  isBreakout: boolean;
+  isMomentum: boolean;
+  hasEarnings: boolean;
+}): string[] {
+  const types: string[] = [];
+  if (args.isBreakout) types.push("breakout");
+  if (args.isMomentum) types.push("momentum");
+  if (args.hasVolumeSpike) types.push("unusual_volume");
+  if (args.hasLargeMove) types.push("gap");
+  if (args.hasEarnings) types.push("earnings");
+  return types.length > 0 ? types : ["general"];
 }
 
 async function scanTicker(item: ScanCandidate): Promise<ScanResult | null> {
@@ -69,6 +86,10 @@ async function scanTicker(item: ScanCandidate): Promise<ScanResult | null> {
   const confirmingIndicators: string[] = [];
   const hasVolumeSpike = Boolean(price.avg_volume && price.volume > price.avg_volume * 1.5);
   const hasLargeMove = Math.abs(price.change_pct) > 3;
+  const earnings = await queryRow<{ id: number }>(
+    "SELECT id FROM market_events WHERE ticker = ? AND event_type = 'earnings' AND event_date::timestamptz >= NOW() - INTERVAL '1 day' ORDER BY event_date ASC LIMIT 1",
+    [ticker]
+  );
 
   if (hasVolumeSpike) {
     reasons.push("Niezwykły wolumen (>150% średniej)");
@@ -95,7 +116,8 @@ async function scanTicker(item: ScanCandidate): Promise<ScanResult | null> {
     confirmingIndicators.push("SMA");
   }
 
-  if (tech.bb_upper && price.price > tech.bb_upper) {
+  const isBreakout = Boolean(tech.bb_upper && price.price > tech.bb_upper);
+  if (isBreakout) {
     reasons.push("Wybicie powyżej górnej wstęgi Bollingera");
     confirmingIndicators.push("Bollinger");
   }
@@ -115,6 +137,11 @@ async function scanTicker(item: ScanCandidate): Promise<ScanResult | null> {
   let riskLevel = "medium";
   let status = "obserwuj";
   const isStrongSignal = reasons.length >= 3 && Boolean(tech.overall_signal?.includes("bullish"));
+  const isMomentum = Boolean(
+    tech.signal_macd === "bullish" ||
+    (tech.adx !== null && tech.adx > 25) ||
+    price.change_pct > 2
+  );
 
   if (isStrongSignal) {
     riskLevel = "low";
@@ -140,6 +167,13 @@ async function scanTicker(item: ScanCandidate): Promise<ScanResult | null> {
     is_watchlisted: item.is_watchlisted,
     rsi: tech.rsi_14,
     overall_signal: tech.overall_signal,
+    scanner_types: classifyScannerTypes({
+      hasVolumeSpike,
+      hasLargeMove,
+      isBreakout,
+      isMomentum,
+      hasEarnings: Boolean(earnings),
+    }),
   };
 }
 
@@ -209,14 +243,14 @@ export async function POST(req: NextRequest) {
   if (existingWatchlist) {
     await runSql(
       `UPDATE watchlist
-       SET opportunity_type = ?, notes = ?, updated_at = datetime('now')
+       SET opportunity_type = ?, notes = ?, updated_at = NOW()
        WHERE id = ?`,
       [scanResult.opportunity_type, scannerNote, existingWatchlist.id]
     );
   } else {
     await runSql(
       `INSERT INTO watchlist (ticker, company_name, notes, group_name, auto_analyze, opportunity_type, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
       [ticker, source.company_name || "", scannerNote, "SCANNER", 1, scanResult.opportunity_type]
     );
   }

@@ -41,12 +41,33 @@ interface CombinedItem {
   price: number | null;
 }
 
+type ActionSignal = "BUY" | "WATCH" | "HOLD" | "REDUCE" | "SELL";
+
+function actionFromTech(tech: TechData | null): ActionSignal {
+  if (!tech) return "HOLD";
+  const score = tech.overall_score ?? 0;
+  if (tech.overall_signal === "strong_bullish" || score >= 70) return "BUY";
+  if (tech.overall_signal === "bullish" || tech.overall_signal === "watch" || score >= 45) return "WATCH";
+  if (tech.overall_signal === "strong_bearish" || score <= -55) return "SELL";
+  if (tech.overall_signal === "bearish" || tech.overall_signal === "risk" || score <= -25) return "REDUCE";
+  return "HOLD";
+}
+
+const actionStyles: Record<ActionSignal, string> = {
+  BUY: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  WATCH: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+  HOLD: "border-slate-700 bg-slate-900 text-slate-300",
+  REDUCE: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  SELL: "border-red-500/30 bg-red-500/10 text-red-300",
+};
+
 export default function Technicals() {
   const { setSelectedTicker, setActiveView } = useAppStore();
   const [items, setItems] = useState<CombinedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "bullish" | "bearish" | "neutral">("all");
+  const [actionFilter, setActionFilter] = useState<"ALL" | ActionSignal>("ALL");
 
   const fetchData = useCallback(async () => {
     const [portRes, watchRes] = await Promise.all([
@@ -129,11 +150,16 @@ export default function Technicals() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filteredItems = items.filter(item => {
-    if (filter === "all") return true;
     const sig = item.tech?.overall_signal || "neutral";
-    if (filter === "bullish") return sig.includes("bullish");
-    if (filter === "bearish") return sig.includes("bearish");
-    return sig === "neutral" || sig === "watch";
+    const signalMatch = filter === "all"
+      ? true
+      : filter === "bullish"
+        ? sig.includes("bullish")
+        : filter === "bearish"
+          ? sig.includes("bearish")
+          : sig === "neutral" || sig === "watch";
+    const actionMatch = actionFilter === "ALL" ? true : actionFromTech(item.tech) === actionFilter;
+    return signalMatch && actionMatch;
   });
 
   if (loading) {
@@ -159,12 +185,25 @@ export default function Technicals() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
-        <table className="w-full">
+      <div className="flex flex-wrap items-center gap-1 bg-slate-800/50 rounded-md p-0.5 w-fit">
+        {(["ALL", "BUY", "WATCH", "HOLD", "REDUCE", "SELL"] as Array<"ALL" | ActionSignal>).map(action => (
+          <button
+            key={action}
+            onClick={() => setActionFilter(action)}
+            className={`px-3 py-1 rounded text-xs transition-colors ${actionFilter === action ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            {action}
+          </button>
+        ))}
+      </div>
+
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[980px]">
           <thead>
             <tr className="border-b border-slate-800">
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Ticker</th>
               <th className="text-center px-2 py-3 text-xs text-slate-500 font-medium">Ogólny</th>
+              <th className="text-center px-2 py-3 text-xs text-slate-500 font-medium">Akcja</th>
               <th className="text-center px-2 py-3 text-xs text-slate-500 font-medium">SMA</th>
               <th className="text-center px-2 py-3 text-xs text-slate-500 font-medium">EMA</th>
               <th className="text-center px-2 py-3 text-xs text-slate-500 font-medium">MACD</th>
@@ -180,6 +219,7 @@ export default function Technicals() {
             {filteredItems.map((item) => {
               const t = item.tech;
               const isExpanded = expanded === item.ticker;
+              const action = actionFromTech(t);
 
               const signalDot = (signal: string) => {
                 const colors: Record<string, string> = {
@@ -219,6 +259,11 @@ export default function Technicals() {
                         </div>
                       ) : <span className="text-slate-700 text-xs">brak danych</span>}
                     </td>
+                    <td className="px-2 py-3 text-center">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${actionStyles[action]}`}>
+                        {action}
+                      </span>
+                    </td>
                     {["signal_sma", "signal_ema", "signal_macd", "signal_rsi", "signal_bb", "signal_stoch", "signal_adx"].map(field => (
                       <td key={field} className="px-2 py-3 text-center">
                         {t ? signalDot((t as unknown as Record<string, string>)[field] || "no_data") : <span className="text-slate-800">—</span>}
@@ -241,7 +286,7 @@ export default function Technicals() {
                   </tr>
                   {isExpanded && t && (
                     <tr className="border-b border-slate-800/50 bg-slate-900/50">
-                      <td colSpan={11} className="px-4 py-3">
+                      <td colSpan={12} className="px-4 py-3">
                         <div className="grid grid-cols-3 gap-4 text-xs">
                           <div>
                             <div className="text-slate-500 font-medium mb-2">Wskaźniki cenowe</div>
@@ -278,7 +323,7 @@ export default function Technicals() {
             })}
             {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-slate-600">
+                <td colSpan={12} className="px-4 py-12 text-center text-slate-600">
                   <Activity size={32} className="mx-auto mb-2 opacity-30" />
                   <div className="text-sm">Brak danych technicznych. Uruchom analizę.</div>
                 </td>

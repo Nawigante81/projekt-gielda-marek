@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, MessagesSquare, Send } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -11,15 +11,40 @@ const SUGGESTIONS = [
   "Dlaczego Tesla spada?",
 ];
 
+const MODES = {
+  portfolio: "Analiza portfolio",
+  stock: "Analiza spółki",
+  market: "Analiza rynku",
+  report: "Generuj raport",
+} as const;
+
 interface ChatResponse {
   answer: string;
   contexts: Array<Record<string, unknown>>;
+}
+
+interface ChatHistoryItem {
+  id: number;
+  question: string;
+  answer: string;
+  created_at: string;
 }
 
 export default function Chat() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<keyof typeof MODES>("stock");
+  const [history, setHistory] = useState<ChatHistoryItem[]>([]);
+
+  const fetchHistory = async () => {
+    const res = await fetch("/api/chat");
+    if (res.ok) setHistory(await res.json());
+  };
+
+  useEffect(() => {
+    void fetchHistory();
+  }, []);
 
   const ask = async (prompt: string) => {
     if (!prompt.trim()) {
@@ -32,7 +57,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: prompt.trim() }),
+        body: JSON.stringify({ question: `[${MODES[mode]}] ${prompt.trim()}` }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -40,6 +65,7 @@ export default function Chat() {
         return;
       }
       setAnswer(data);
+      await fetchHistory();
     } catch {
       toast.error("Błąd połączenia z asystentem");
     } finally {
@@ -59,6 +85,17 @@ export default function Chat() {
       </div>
 
       <div className="card p-4 space-y-3">
+        <div className="flex flex-wrap gap-1 bg-slate-900/70 rounded-md p-1 w-fit">
+          {Object.entries(MODES).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key as keyof typeof MODES)}
+              className={`px-3 py-1 rounded text-xs transition-colors ${mode === key ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-2 gap-2">
           {SUGGESTIONS.map((suggestion) => (
             <button
@@ -90,7 +127,7 @@ export default function Chat() {
         </div>
       </div>
 
-      <div className="grid grid-cols-[2fr,1fr] gap-4">
+      <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
         <div className="card p-4 min-h-64">
           <div className="text-xs font-medium text-slate-400 mb-3">Odpowiedź</div>
           {loading && (
@@ -123,6 +160,26 @@ export default function Chat() {
               <div className="text-sm text-slate-600">Brak danych kontekstowych.</div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="text-xs font-medium text-slate-400 mb-3">Historia rozmów</div>
+        <div className="space-y-2">
+          {history.slice(0, 8).map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                setQuestion(item.question.replace(/^\[[^\]]+\]\s*/, ""));
+                setAnswer({ answer: item.answer, contexts: [] });
+              }}
+              className="w-full rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-left transition-colors hover:border-slate-700"
+            >
+              <div className="truncate text-sm text-white">{item.question}</div>
+              <div className="mt-1 text-[11px] text-slate-600">{new Date(item.created_at).toLocaleString("pl-PL")}</div>
+            </button>
+          ))}
+          {history.length === 0 && <div className="text-sm text-slate-600">Brak zapisanych rozmów.</div>}
         </div>
       </div>
     </div>

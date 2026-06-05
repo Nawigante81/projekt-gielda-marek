@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "typecheck": "node scripts/prepare-next-types.cjs && tsc --noEmit",
     "db:check": "tsx scripts/db-check.ts",
+    "check:sqlite-sql": "tsx scripts/check-sqlite-sql.ts",
     "migrate:postgres": "tsx scripts/migrate-postgres.ts",
     "setup:postgres": "tsx scripts/setup-postgres.ts",
     "import:sqlite-to-postgres": "tsx scripts/import-sqlite-to-postgres.ts",

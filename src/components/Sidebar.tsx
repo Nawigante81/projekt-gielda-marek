@@ -69,6 +69,19 @@ export default function Sidebar({ onLogout, mobileOpen = false, onCloseMobile }:
               <div className="text-[10px] text-slate-500">US Market Monitor</div>
             </div>
           </div>
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2">
+            <div className="min-w-0">
+              <div className="text-[10px] text-slate-600">Zalogowany</div>
+              <div className="truncate text-xs text-slate-300">{user?.username}</div>
+            </div>
+            <button
+              onClick={onLogout}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-slate-400 transition-colors hover:bg-red-900/10 hover:text-red-400"
+            >
+              <LogOut size={13} />
+              Wyloguj
+            </button>
+          </div>
         </div>
 
         {/* Nav */}
@@ -96,18 +109,8 @@ export default function Sidebar({ onLogout, mobileOpen = false, onCloseMobile }:
           ))}
         </nav>
 
-        {/* Bottom */}
-        <div className="p-2 border-t border-slate-800">
-          <div className="px-3 py-2 text-[11px] text-slate-600 mb-1">
-            Zalogowany: <span className="text-slate-400">{user?.username}</span>
-          </div>
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-slate-400 hover:text-red-400 hover:bg-red-900/10 transition-colors"
-          >
-            <LogOut size={14} />
-            Wyloguj
-          </button>
+        <div className="border-t border-slate-800 px-3 py-2 text-[11px] text-slate-600">
+          AI Stock Analyst
         </div>
       </aside>
 
@@ -120,24 +123,39 @@ export default function Sidebar({ onLogout, mobileOpen = false, onCloseMobile }:
             onClick={onCloseMobile}
           />
           <aside className="relative z-10 flex h-full w-[86vw] max-w-sm flex-col border-r border-slate-800 bg-slate-950 shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
-                  <Activity size={14} className="text-white" />
+            <div className="p-4 border-b border-slate-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center">
+                    <Activity size={14} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">AI Stock Analyst</div>
+                    <div className="text-[10px] text-slate-500">US Market Monitor</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-sm font-semibold text-white">AI Stock Analyst</div>
-                  <div className="text-[10px] text-slate-500">US Market Monitor</div>
-                </div>
+                <button
+                  type="button"
+                  className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                  onClick={onCloseMobile}
+                  aria-label="Zamknij menu"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                className="rounded-md p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
-                onClick={onCloseMobile}
-                aria-label="Zamknij menu"
-              >
-                <X size={18} />
-              </button>
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-slate-800 bg-slate-900/70 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-[10px] text-slate-600">Zalogowany</div>
+                  <div className="truncate text-xs text-slate-300">{user?.username}</div>
+                </div>
+                <button
+                  onClick={onLogout}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-slate-400 transition-colors hover:bg-red-900/10 hover:text-red-400"
+                >
+                  <LogOut size={13} />
+                  Wyloguj
+                </button>
+              </div>
             </div>
 
             <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
@@ -167,17 +185,8 @@ export default function Sidebar({ onLogout, mobileOpen = false, onCloseMobile }:
               ))}
             </nav>
 
-            <div className="p-2 border-t border-slate-800">
-              <div className="px-3 py-2 text-[11px] text-slate-600 mb-1">
-                Zalogowany: <span className="text-slate-400">{user?.username}</span>
-              </div>
-              <button
-                onClick={onLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-slate-400 hover:text-red-400 hover:bg-red-900/10 transition-colors"
-              >
-                <LogOut size={14} />
-                Wyloguj
-              </button>
+            <div className="border-t border-slate-800 px-3 py-2 text-[11px] text-slate-600">
+              AI Stock Analyst
             </div>
           </aside>
         </div>

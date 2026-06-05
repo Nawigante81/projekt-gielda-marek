@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const slug = String(name).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const result = await runSql(`
     INSERT INTO watchlists (name, slug, description, color, auto_analyze, updated_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    VALUES (?, ?, ?, ?, ?, NOW())
   `, [name.trim(), slug, description || "", color || "#3b82f6", auto_analyze === false ? 0 : 1]);
 
   return NextResponse.json({ success: true, id: result.lastInsertId ?? null });

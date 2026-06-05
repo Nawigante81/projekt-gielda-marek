@@ -102,6 +102,7 @@ export async function POST(req: NextRequest) {
 
   let answer = buildDeterministicAnswer(question, validContexts);
   const openaiKey = process.env.OPENAI_API_KEY || (await getSettingValue("openai_api_key"));
+  let usedModelProvider = "deterministic";
   if (openaiKey) {
     try {
       const openaiBaseUrl = process.env.OPENAI_BASE_URL || (await getSettingValue("openai_base_url")) || "https://api.openai.com/v1";
@@ -131,10 +132,55 @@ export async function POST(req: NextRequest) {
       if (response.ok) {
         const data = await response.json();
         const content = data.choices?.[0]?.message?.content;
-        if (content) answer = content;
+        if (content) {
+          answer = content;
+          usedModelProvider = "openai";
+        }
       }
     } catch {
       // Keep deterministic answer.
+    }
+  }
+
+  if (usedModelProvider === "deterministic") {
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || (await getSettingValue("anthropic_api_key"));
+    if (anthropicKey) {
+      try {
+        const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL || (await getSettingValue("anthropic_base_url")) || "https://api.anthropic.com";
+        const response = await fetch(`${anthropicBaseUrl}/v1/messages`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-3-5-haiku-latest",
+            max_tokens: 500,
+            temperature: 0.2,
+            system: "Odpowiadasz wyłącznie na podstawie dostarczonego kontekstu giełdowego. Jeśli w kontekście czegoś nie ma, powiedz to wprost. Nie spekuluj.",
+            messages: [
+              {
+                role: "user",
+                content: `Pytanie: ${question}\n\nKontekst JSON:\n${JSON.stringify(validContexts, null, 2)}`,
+              },
+            ],
+          }),
+          signal: AbortSignal.timeout(20000),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const content = Array.isArray(data.content)
+            ? data.content.map((part: { text?: string }) => part.text || "").join("\n").trim()
+            : "";
+          if (content) {
+            answer = content;
+            usedModelProvider = "anthropic";
+          }
+        }
+      } catch {
+        // Keep deterministic answer.
+      }
     }
   }
 
@@ -143,5 +189,20 @@ export async function POST(req: NextRequest) {
     VALUES (?, ?, ?, ?)
   `, [session.userId, question, answer, JSON.stringify(validContexts)]);
 
-  return NextResponse.json({ answer, contexts: validContexts });
+  return NextResponse.json({ answer, contexts: validContexts, provider: usedModelProvider });
+}
+
+export async function GET() {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const rows = await queryRows(`
+    SELECT id, question, answer, context_json, created_at
+    FROM ai_chat_logs
+    WHERE user_id = ? OR user_id IS NULL
+    ORDER BY created_at DESC, id DESC
+    LIMIT 20
+  `, [session.userId]);
+
+  return NextResponse.json(rows);
 }

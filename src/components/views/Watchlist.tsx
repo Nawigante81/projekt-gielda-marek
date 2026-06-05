@@ -22,13 +22,18 @@ interface WatchlistItem {
   current_price: number | null;
   change_pct: number | null;
   volume: number | null;
+  avg_volume: number | null;
+  unusual_volume_ratio: number | null;
   overall_signal: string | null;
   ai_score: number | null;
   recommendation: string | null;
   news_sentiment_score: number | null;
   news_sentiment_label: string | null;
   signal_macd: string | null;
+  macd_histogram: number | null;
   rsi_14: number | null;
+  earnings_date: string | null;
+  sec_event: string | null;
   latest_news: string | null;
   latest_alert: string | null;
 }
@@ -58,6 +63,13 @@ const opportunityStyles: Record<OpportunityType, string> = {
   after_earnings: "border-blue-500/30 bg-blue-500/10 text-blue-400",
   unusual_move: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300",
 };
+
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" });
+}
 
 export default function Watchlist() {
   const { setSelectedTicker, setActiveView } = useAppStore();
@@ -320,8 +332,8 @@ export default function Watchlist() {
         </div>
       )}
 
-      <div className="card overflow-hidden hidden md:block">
-        <table className="w-full">
+      <div className="card overflow-x-auto hidden md:block">
+        <table className="w-full min-w-[1280px]">
           <thead>
             <tr className="border-b border-slate-800">
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Ticker</th>
@@ -330,7 +342,10 @@ export default function Watchlist() {
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Zmiana %</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Wolumen</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">RSI</th>
+              <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">MACD</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">AI Score</th>
+              <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Earnings</th>
+              <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">SEC</th>
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Grupa</th>
               <th className="text-right px-4 py-3 text-xs text-slate-500 font-medium">Sygnał</th>
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Ostatni news</th>
@@ -362,7 +377,10 @@ export default function Watchlist() {
                   <TrendLabel delta={item.change_pct} />
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-xs text-slate-400">
-                  {item.volume ? (item.volume / 1e6).toFixed(2) + "M" : "—"}
+                  <div>{item.volume ? (item.volume / 1e6).toFixed(2) + "M" : "—"}</div>
+                  {item.unusual_volume_ratio !== null && item.unusual_volume_ratio >= 1.5 && (
+                    <div className="text-[10px] text-amber-400">{item.unusual_volume_ratio.toFixed(1)}x avg</div>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-sm">
                   {item.rsi_14 !== null ? (
@@ -374,12 +392,22 @@ export default function Watchlist() {
                   ) : "—"}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-sm">
+                  {item.macd_histogram !== null ? (
+                    <span className={item.macd_histogram > 0 ? "text-emerald-400" : "text-red-400"}>
+                      {item.macd_histogram.toFixed(3)}
+                    </span>
+                  ) : "—"}
+                  {item.signal_macd && <div className="text-[10px] text-slate-600">{item.signal_macd}</div>}
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-sm">
                   {item.ai_score !== null ? (
                     <span className={item.ai_score >= 70 ? "text-emerald-400" : item.ai_score < 40 ? "text-red-400" : "text-slate-300"}>
                       {item.ai_score.toFixed(1)}
                     </span>
                   ) : "—"}
                 </td>
+                <td className="px-4 py-3 text-right text-xs text-slate-400">{formatDate(item.earnings_date)}</td>
+                <td className="px-4 py-3 text-xs text-slate-400">{item.sec_event || "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xs px-2 py-1 rounded border border-slate-800 bg-slate-900/70 text-slate-300">
@@ -424,7 +452,7 @@ export default function Watchlist() {
             ))}
             {filteredItems.length === 0 && items.length > 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-slate-600">
+                <td colSpan={14} className="px-4 py-12 text-center text-slate-600">
                   <Eye size={32} className="mx-auto mb-2 opacity-30" />
                   <div className="text-sm">Brak tickerów dla bieżących filtrów.</div>
                 </td>
@@ -460,10 +488,22 @@ export default function Watchlist() {
                 <div className="text-slate-500">Zmiana</div>
                 <div className="mt-1"><PriceChange value={item.change_pct} className="text-xs" /></div>
                 <div className="mt-1"><TrendLabel delta={item.change_pct} /></div>
+                {item.unusual_volume_ratio !== null && item.unusual_volume_ratio >= 1.5 && (
+                  <div className="mt-1 text-[10px] text-amber-400">{item.unusual_volume_ratio.toFixed(1)}x avg volume</div>
+                )}
               </div>
               <div className="rounded-md bg-slate-900/70 p-2">
                 <div className="text-slate-500">AI Score</div>
                 <div className="mt-1 text-slate-200">{item.ai_score !== null ? item.ai_score.toFixed(1) : "—"}</div>
+              </div>
+              <div className="rounded-md bg-slate-900/70 p-2">
+                <div className="text-slate-500">MACD / SEC</div>
+                <div className="mt-1 text-slate-200">{item.macd_histogram !== null ? item.macd_histogram.toFixed(3) : "—"}</div>
+                <div className="mt-1 text-[10px] text-slate-500">{item.sec_event || "brak SEC"}</div>
+              </div>
+              <div className="rounded-md bg-slate-900/70 p-2">
+                <div className="text-slate-500">Earnings</div>
+                <div className="mt-1 text-slate-200">{formatDate(item.earnings_date)}</div>
               </div>
               <div className="rounded-md bg-slate-900/70 p-2">
                 <div className="text-slate-500">Grupa</div>

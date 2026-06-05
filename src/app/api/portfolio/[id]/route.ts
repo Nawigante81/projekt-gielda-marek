@@ -50,7 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       alert_threshold = ?,
       status = ?,
       notes = ?,
-      updated_at = datetime('now')
+      updated_at = NOW()
     WHERE id = ?
   `, [company_name || "", shares, purchasePrice, purchase_date || null, currency, alertThreshold, status, notes || "", id]);
 

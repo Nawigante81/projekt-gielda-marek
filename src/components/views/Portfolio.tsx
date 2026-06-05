@@ -23,7 +23,12 @@ interface PortfolioItem {
   change_pct: number | null;
   change_abs: number | null;
   volume: number | null;
+  avg_volume: number | null;
+  high_52w: number | null;
+  low_52w: number | null;
+  beta: number | null;
   overall_signal: string | null;
+  ai_score: number | null;
   rsi_14: number | null;
   macd_histogram: number | null;
   last_updated: string | null;
@@ -62,6 +67,27 @@ const currencySymbols: Record<PortfolioItem["currency"], string> = {
   PLN: "zł",
   GBP: "£",
 };
+
+function formatMoney(value: number, currency: PortfolioItem["currency"] = "USD") {
+  const symbol = currencySymbols[currency] || currency;
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}${symbol}${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function riskScore(item: PortfolioItem): number {
+  let score = 25;
+  if ((item.rsi_14 ?? 50) > 70 || (item.rsi_14 ?? 50) < 30) score += 18;
+  if ((item.beta ?? 1) > 1.4) score += 14;
+  if (Math.abs(item.change_pct ?? 0) > 3) score += 14;
+  if (item.overall_signal?.includes("bearish")) score += 18;
+  if ((item.ai_score ?? 50) < 40) score += 12;
+  return Math.min(100, Math.max(0, Math.round(score)));
+}
+
+function drawdownPct(item: PortfolioItem, currentPrice: number): number | null {
+  if (!item.high_52w || item.high_52w <= 0) return null;
+  return ((currentPrice - item.high_52w) / item.high_52w) * 100;
+}
 
 export default function Portfolio() {
   const { setSelectedTicker, setActiveView } = useAppStore();
@@ -148,6 +174,26 @@ export default function Portfolio() {
 
   const activeItems = items.filter((item) => item.status !== "sold");
   const totalValue = activeItems.reduce((s, i) => s + (i.current_price || i.purchase_price) * i.shares, 0);
+  const totalDailyPnl = activeItems.reduce((sum, item) => {
+    const currentPrice = item.current_price || item.purchase_price;
+    const previousPrice = item.change_pct !== null ? currentPrice / (1 + item.change_pct / 100) : currentPrice;
+    return sum + (currentPrice - previousPrice) * item.shares;
+  }, 0);
+  const totalUnrealizedPnl = activeItems.reduce((sum, item) => {
+    const currentPrice = item.current_price || item.purchase_price;
+    return sum + (currentPrice - item.purchase_price) * item.shares;
+  }, 0);
+  const weightedRiskScore = totalValue > 0
+    ? activeItems.reduce((sum, item) => {
+        const currentPrice = item.current_price || item.purchase_price;
+        return sum + riskScore(item) * ((currentPrice * item.shares) / totalValue);
+      }, 0)
+    : 0;
+  const maxDrawdown = activeItems.reduce((worst, item) => {
+    const currentPrice = item.current_price || item.purchase_price;
+    const dd = drawdownPct(item, currentPrice);
+    return dd === null ? worst : Math.min(worst, dd);
+  }, 0);
   const isEmpty = items.length === 0;
 
   if (loading) {
@@ -170,6 +216,41 @@ export default function Portfolio() {
           <Plus size={14} /> Dodaj pozycję
         </button>
       </div>
+
+      {!isEmpty && (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="card p-3">
+            <div className="text-[11px] text-slate-500">Wartość aktywna</div>
+            <div className="mt-1 font-mono text-lg text-white">{formatMoney(totalValue).replace("+", "")}</div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[11px] text-slate-500">Dzienny P&L</div>
+            <div className={`mt-1 font-mono text-lg ${totalDailyPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {formatMoney(totalDailyPnl)}
+            </div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[11px] text-slate-500">Niezrealizowany P&L</div>
+            <div className={`mt-1 font-mono text-lg ${totalUnrealizedPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {formatMoney(totalUnrealizedPnl)}
+            </div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[11px] text-slate-500">Realized P&L</div>
+            <div className="mt-1 text-sm text-slate-400">brak transakcji</div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[11px] text-slate-500">Risk score</div>
+            <div className={`mt-1 font-mono text-lg ${weightedRiskScore >= 70 ? "text-red-400" : weightedRiskScore >= 45 ? "text-amber-400" : "text-emerald-400"}`}>
+              {weightedRiskScore.toFixed(0)}/100
+            </div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[11px] text-slate-500">Największy drawdown</div>
+            <div className="mt-1 font-mono text-lg text-red-300">{maxDrawdown.toFixed(1)}%</div>
+          </div>
+        </div>
+      )}
 
       {/* Form Modal */}
       {showForm && (
@@ -315,8 +396,8 @@ export default function Portfolio() {
           </div>
         </div>
       ) : (
-      <div className="card overflow-hidden">
-        <table className="w-full">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[1180px]">
           <thead>
             <tr className="border-b border-slate-800">
               <th className="text-left px-4 py-3 text-xs text-slate-500 font-medium">Ticker</th>
@@ -340,6 +421,10 @@ export default function Portfolio() {
               const pnlPct = ((currentPrice - item.purchase_price) / item.purchase_price) * 100;
               const portShare = totalValue > 0 ? (posValue / totalValue) * 100 : 0;
               const currencySymbol = currencySymbols[item.currency] || item.currency;
+              const previousPrice = item.change_pct !== null ? currentPrice / (1 + item.change_pct / 100) : currentPrice;
+              const dailyPnl = (currentPrice - previousPrice) * item.shares;
+              const itemDrawdown = drawdownPct(item, currentPrice);
+              const itemRiskScore = riskScore(item);
 
               return (
                 <tr key={item.id} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
@@ -372,6 +457,9 @@ export default function Portfolio() {
                   <td className="px-4 py-3 text-right">
                     <PriceChange value={item.change_pct} className="text-xs" />
                     <TrendLabel delta={item.change_pct} />
+                    <div className={`text-[10px] ${dailyPnl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      {formatMoney(dailyPnl, item.currency)}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className={`font-mono text-sm ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
@@ -384,6 +472,12 @@ export default function Portfolio() {
                   <td className="px-4 py-3 text-right">
                     <div className="font-mono text-sm text-slate-300">{currencySymbol}{posValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     <div className="text-[10px] text-slate-600">{portShare.toFixed(1)}% portfela</div>
+                    <div className={`text-[10px] ${itemRiskScore >= 70 ? "text-red-400" : itemRiskScore >= 45 ? "text-amber-400" : "text-emerald-500"}`}>
+                      risk {itemRiskScore}/100
+                    </div>
+                    <div className="text-[10px] text-red-300">
+                      DD {itemDrawdown === null ? "—" : `${itemDrawdown.toFixed(1)}%`}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <SignalBadge signal={item.overall_signal} />

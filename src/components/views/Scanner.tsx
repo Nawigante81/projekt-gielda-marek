@@ -22,6 +22,7 @@ interface ScanResult {
   is_watchlisted: boolean;
   rsi: number | null;
   overall_signal: string | null;
+  scanner_types: string[];
 }
 
 const STATUS_CONFIG = {
@@ -44,11 +45,21 @@ const OPPORTUNITY_CONFIG: Record<OpportunityType, { label: string; style: string
   unusual_move: { label: "Nietypowy ruch", style: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300" },
 };
 
+const SCANNER_TYPE_CONFIG: Record<string, { label: string; style: string }> = {
+  breakout: { label: "Breakout", style: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" },
+  momentum: { label: "Momentum", style: "border-blue-500/30 bg-blue-500/10 text-blue-300" },
+  unusual_volume: { label: "Unusual Volume", style: "border-amber-500/30 bg-amber-500/10 text-amber-300" },
+  gap: { label: "Gap", style: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-300" },
+  earnings: { label: "Earnings", style: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300" },
+  general: { label: "General", style: "border-slate-700 bg-slate-900 text-slate-300" },
+};
+
 export default function Scanner() {
   const { setSelectedTicker, setActiveView } = useAppStore();
   const [results, setResults] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<"all" | "mocny_sygnal" | "obserwuj" | "wysokie_ryzyko">("all");
+  const [scannerType, setScannerType] = useState<string>("all");
   const [savingTicker, setSavingTicker] = useState<string | null>(null);
 
   const fetchScanner = useCallback(async () => {
@@ -60,7 +71,11 @@ export default function Scanner() {
 
   useEffect(() => { fetchScanner(); }, [fetchScanner]);
 
-  const filtered = results.filter(r => filterStatus === "all" || r.status === filterStatus);
+  const filtered = results.filter(r => {
+    const statusMatch = filterStatus === "all" || r.status === filterStatus;
+    const typeMatch = scannerType === "all" || (r.scanner_types || []).includes(scannerType);
+    return statusMatch && typeMatch;
+  });
 
   const saveToWatchlist = async (ticker: string) => {
     setSavingTicker(ticker);
@@ -125,6 +140,21 @@ export default function Scanner() {
         })}
       </div>
 
+      <div className="flex flex-wrap items-center gap-1 bg-slate-800/50 rounded-md p-0.5 w-fit">
+        {(["all", "breakout", "momentum", "unusual_volume", "gap", "earnings"] as const).map(type => {
+          const count = type === "all" ? results.length : results.filter(result => (result.scanner_types || []).includes(type)).length;
+          return (
+            <button
+              key={type}
+              onClick={() => setScannerType(type)}
+              className={`px-3 py-1 rounded text-xs transition-colors ${scannerType === type ? "bg-slate-700 text-white" : "text-slate-500 hover:text-slate-300"}`}
+            >
+              {type === "all" ? "Wszystkie typy" : SCANNER_TYPE_CONFIG[type].label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center h-48"><Loader2 className="animate-spin text-blue-500" size={24} /></div>
       ) : (
@@ -159,6 +189,11 @@ export default function Scanner() {
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] ${opportunityCfg.style}`}>
                         {opportunityCfg.label}
                       </span>
+                      {(result.scanner_types || []).map(type => (
+                        <span key={type} className={`rounded-full border px-2 py-0.5 text-[10px] ${(SCANNER_TYPE_CONFIG[type] || SCANNER_TYPE_CONFIG.general).style}`}>
+                          {(SCANNER_TYPE_CONFIG[type] || SCANNER_TYPE_CONFIG.general).label}
+                        </span>
+                      ))}
                     </div>
                   </div>
                   <div className="text-right">

@@ -23,7 +23,7 @@ export async function PATCH(req: NextRequest) {
     UPDATE alert_rules
     SET is_enabled = COALESCE(?, is_enabled),
         threshold_value = COALESCE(?, threshold_value),
-        updated_at = datetime('now')
+        updated_at = NOW()
     WHERE rule_key = ?
   `, [typeof is_enabled === "boolean" ? (is_enabled ? 1 : 0) : null, threshold_value ?? null, rule_key]);
 
